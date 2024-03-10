@@ -159,13 +159,6 @@ let fold_newline_func_to_msg stmt =
   in
   map_block stmt ~f:(fun stmts -> reduce [] (List.rev stmts))
 
-let remove_cast =
-  (* Only casts that don't change the meaning should be removed, but for now we
-     remove them all to match AinDecompiler. *)
-  map_expr ~f:(function
-    | UnaryOp ((FTOI | ITOF | ITOLI | STOI), expr) -> expr
-    | expr -> expr)
-
 let remove_optional_arguments =
   map_expr ~f:(function
     | Call ((Builtin (A_NUMOF, _) as f), [ Number 1l ]) -> Call (f, [])

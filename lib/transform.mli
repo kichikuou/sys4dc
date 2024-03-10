@@ -36,6 +36,5 @@ val remove_generated_lockpeek : ast_transform
 val remove_dummy_variable_assignment : ast_transform
 val remove_vardecl_default_rhs : ast_transform
 val fold_newline_func_to_msg : ast_transform
-val remove_cast : ast_transform
 val remove_optional_arguments : ast_transform
 val simplify_boolean_expr : ast_transform

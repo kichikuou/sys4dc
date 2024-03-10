@@ -286,7 +286,8 @@ let print_function ppf (func : function_t) =
     | UnaryOp (ITOB, Number 0l) -> pp_print_string ppf "false"
     | UnaryOp (ITOB, Number 1l) -> pp_print_string ppf "true"
     | UnaryOp (ITOB, expr) -> pr_expr prec ppf expr
-    | UnaryOp (STOI, expr) -> fprintf ppf "int(%a)" (pr_expr 0) expr
+    | UnaryOp (STOI, expr) ->
+        fprintf ppf "%a.Int()" (pr_expr (prec_value PREC_DOT)) expr
     | UnaryOp (I_STRING, expr) -> fprintf ppf "string(%a)" (pr_expr 0) expr
     | UnaryOp (insn, expr) ->
         let op = operator insn in

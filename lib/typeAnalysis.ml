@@ -65,6 +65,13 @@ let builtin_type receiver_type args = function
         (Instructions.show_instruction op)
         ()
 
+let remove_cast (t : ain_type) e =
+  match (t, e) with
+  | Int, UnaryOp (FTOI, e) -> e
+  | Float, UnaryOp (ITOF, e) -> e
+  | LongInt, UnaryOp (ITOLI, e) -> e
+  | _, _ -> e
+
 let unify_if_functype t t' =
   match (t, t') with
   | FuncType ftv, FuncType ftv' -> Type.TypeVar.unify ftv ftv'
@@ -159,7 +166,7 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
           List.map2_exn args arg_types' ~f:(fun arg t ->
               let arg', t' = analyze_expr t arg in
               unify_if_functype t t';
-              arg')
+              remove_cast t arg')
         in
         (Call (f', args'), return_type)
     | TernaryOp (e1, e2, e3) ->
@@ -265,6 +272,14 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     let expected_arg_type =
       match insn with PSEUDO_LOGAND | PSEUDO_LOGOR -> Bool | _ -> Any
     in
+    let decast =
+      match insn with
+      | F_ADD | F_SUB | F_MUL | F_DIV | F_EQUALE | F_NOTE | F_LT | F_LTE | F_GT
+      | F_GTE ->
+          remove_cast Float
+      | LI_ADD | LI_SUB | LI_MUL | LI_DIV | LI_MOD -> remove_cast LongInt
+      | _ -> Fn.id
+    in
     (* If either side is a numeric literal, match it to the other side's type. *)
     match (lhs, rhs) with
     | _, Number _ ->
@@ -279,7 +294,8 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         let lhs', lt = analyze_expr expected_arg_type lhs
         and rhs', rt = analyze_expr expected_arg_type rhs in
         unify_if_functype lt rt;
-        (BinaryOp (result_insn lt rt, lhs', rhs'), result_type lt rt)
+        ( BinaryOp (result_insn lt rt, decast lhs', decast rhs'),
+          result_type lt rt )
   and analyze_assign_op insn lval rhs =
     let lval', lt = analyze_lvalue lval in
     let rhs', rt = analyze_expr lt rhs in
@@ -299,6 +315,7 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     | FuncType _, Int, _
     | _, _, Instructions.S_ASSIGN
     | _, _, SR_ASSIGN ->
+        let rhs' = remove_cast lt rhs' in
         (AssignOp (insn, lval', rhs'), lt)
     | Ref _, (Ref _ | Array _ | Struct _ | String), (ASSIGN | R_ASSIGN) ->
         (AssignOp (PSEUDO_REF_ASSIGN, lval', rhs'), lt)
@@ -318,6 +335,7 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     | VarDecl (var, None) -> VarDecl (var, None)
     | VarDecl (var, Some (insn, expr)) ->
         let expr', _ = analyze_expr var.type_ expr in
+        let expr' = remove_cast var.type_ expr' in
         (match (var.type_, insn) with
         | FuncType ftv, PSEUDO_FT_ASSIGNS ft_id ->
             Type.TypeVar.set_id ftv ft_id
@@ -354,6 +372,7 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     | Return (Some expr) ->
         let expr', t = analyze_expr func.return_type expr in
         unify_if_functype t func.return_type;
+        let expr' = remove_cast func.return_type expr' in
         Return (Some expr')
     | ScenarioJump _ as stmt -> stmt
     | Msg _ as stmt -> stmt

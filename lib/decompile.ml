@@ -93,7 +93,7 @@ let decompile_function (f : function_bytecode) =
       |> Transform.remove_redundant_return
       |> Transform.remove_dummy_variable_assignment
       |> Transform.remove_vardecl_default_rhs
-      |> Transform.fold_newline_func_to_msg |> Transform.remove_cast
+      |> Transform.fold_newline_func_to_msg
       |> Transform.remove_optional_arguments
       |> if Ain.ain.vers >= 6 then Transform.simplify_boolean_expr else Fn.id
     in
@@ -121,7 +121,7 @@ let inspect_function (f : function_bytecode) =
   |> Transform.remove_redundant_return
   |> Transform.remove_dummy_variable_assignment
   |> Transform.remove_vardecl_default_rhs |> Transform.fold_newline_func_to_msg
-  |> Transform.remove_cast |> Transform.remove_optional_arguments
+  |> Transform.remove_optional_arguments
   |> if Ain.ain.vers >= 6 then Transform.simplify_boolean_expr else Fn.id)
   |> fun body ->
   Stdio.printf "\nDecompiled code:\n";
