@@ -24,42 +24,47 @@ let array_element_type = function
   | Array element_type -> element_type
   | _ -> failwith "array_element_type: non-array type"
 
-let builtin_type receiver_type args = function
-  | Instructions.A_NUMOF -> (Int, if List.is_empty args then [] else [ Int ])
-  | A_EMPTY -> (Bool, [])
-  | A_ALLOC -> (Void, List.map args ~f:(fun _ -> Int))
-  | A_REALLOC -> (Void, [ Int ])
-  | A_FREE -> (Void, [])
-  | A_PUSHBACK -> (Void, [ array_element_type receiver_type ])
-  | A_POPBACK -> (Void, [])
-  | A_INSERT -> (Void, [ Int; array_element_type receiver_type ])
-  | A_ERASE -> (Int, [ Int ])
-  | A_FILL -> (Int, [ Int; Int; array_element_type receiver_type ])
-  | A_COPY -> (Int, [ Int; Ref receiver_type; Int; Int ])
-  | A_FIND -> (Int, [ Int; Int; Any; FuncType (TypeVar.create Var) ])
-  | A_SORT -> (Void, [ FuncType (TypeVar.create Var) ])
+let builtin_type receiver_type insn args =
+  let open Instructions in
+  match insn with
+  | A_NUMOF ->
+      if snd (array_base_and_rank receiver_type) = 1 then
+        (PSEUDO_A_NUMOF1, Int, [ Int ])
+      else (A_NUMOF, Int, [ Int ])
+  | A_EMPTY -> (insn, Bool, [])
+  | A_ALLOC -> (insn, Void, List.map args ~f:(fun _ -> Int))
+  | A_REALLOC -> (insn, Void, [ Int ])
+  | A_FREE -> (insn, Void, [])
+  | A_PUSHBACK -> (insn, Void, [ array_element_type receiver_type ])
+  | A_POPBACK -> (insn, Void, [])
+  | A_INSERT -> (insn, Void, [ Int; array_element_type receiver_type ])
+  | A_ERASE -> (insn, Int, [ Int ])
+  | A_FILL -> (insn, Int, [ Int; Int; array_element_type receiver_type ])
+  | A_COPY -> (insn, Int, [ Int; Ref receiver_type; Int; Int ])
+  | A_FIND -> (insn, Int, [ Int; Int; Any; FuncType (TypeVar.create Var) ])
+  | A_SORT -> (insn, Void, [ FuncType (TypeVar.create Var) ])
   | A_SORT_MEM -> (
       match receiver_type with
-      | Array (Struct n) -> (Void, [ StructMember n ])
+      | Array (Struct n) -> (insn, Void, [ StructMember n ])
       | _ ->
           Printf.failwithf "A_SORT_MEM: unexpected receiver type %s"
             (show_ain_type receiver_type)
             ())
-  | A_REVERSE -> (Void, [])
-  | S_EMPTY -> (Bool, [])
-  | S_LENGTH -> (Int, [])
-  | S_LENGTH2 -> (Int, [])
-  | S_LENGTHBYTE -> (Int, [])
-  | S_ERASE2 -> (Void, [ Int ])
-  | S_FIND -> (Int, [ String ])
-  | S_GETPART -> (String, [ Int; Int ])
-  | S_PUSHBACK2 -> (Void, [ Char ])
-  | S_POPBACK2 -> (Void, [])
-  | DG_NUMOF -> (Int, [])
-  | DG_CLEAR -> (Void, [])
-  | DG_EXIST -> (Bool, [ receiver_type ])
-  | DG_ADD | DG_ERASE -> (Void, [ receiver_type ])
-  | FTOS -> (String, [ Int ])
+  | A_REVERSE -> (insn, Void, [])
+  | S_EMPTY -> (insn, Bool, [])
+  | S_LENGTH -> (insn, Int, [])
+  | S_LENGTH2 -> (insn, Int, [])
+  | S_LENGTHBYTE -> (insn, Int, [])
+  | S_ERASE2 -> (insn, Void, [ Int ])
+  | S_FIND -> (insn, Int, [ String ])
+  | S_GETPART -> (insn, String, [ Int; Int ])
+  | S_PUSHBACK2 -> (insn, Void, [ Char ])
+  | S_POPBACK2 -> (insn, Void, [])
+  | DG_NUMOF -> (insn, Int, [])
+  | DG_CLEAR -> (insn, Void, [])
+  | DG_EXIST -> (insn, Bool, [ receiver_type ])
+  | DG_ADD | DG_ERASE -> (insn, Void, [ receiver_type ])
+  | FTOS -> (insn, String, [ Int ])
   | op ->
       Printf.failwithf "builtin_type: unknown operator %s"
         (Instructions.show_instruction op)
@@ -221,12 +226,16 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         (expr, syscall.return_type, syscall.arg_types)
     | Builtin (insn, lval) ->
         let lval', t = analyze_lvalue lval in
-        let return_type, arg_types = builtin_type (auto_deref t) args insn in
-        (Builtin (insn, lval'), return_type, arg_types)
+        let insn', return_type, arg_types =
+          builtin_type (auto_deref t) insn args
+        in
+        (Builtin (insn', lval'), return_type, arg_types)
     | Builtin2 (insn, this) ->
         let this', t = analyze_expr Any this in
-        let return_type, arg_types = builtin_type (auto_deref t) args insn in
-        (Builtin2 (insn, this'), return_type, arg_types)
+        let insn', return_type, arg_types =
+          builtin_type (auto_deref t) insn args
+        in
+        (Builtin2 (insn', this'), return_type, arg_types)
   and analyze_unary_op insn e =
     let e', et = analyze_expr Any e in
     let t =

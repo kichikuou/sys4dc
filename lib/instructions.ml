@@ -300,6 +300,7 @@ type instruction =
   | PSEUDO_REF_ASSIGN
   | PSEUDO_FT_ASSIGNS of int
   | PSEUDO_DG_CALL of int (* dg_type *)
+  | PSEUDO_A_NUMOF1
 [@@deriving show { with_path = false }]
 
 let width = function
@@ -755,7 +756,7 @@ let builtin_method_name = function
   | S_ERASE2 | A_ERASE | DG_ERASE -> "Erase"
   | S_PUSHBACK2 | A_PUSHBACK -> "PushBack"
   | S_POPBACK2 | A_POPBACK -> "PopBack"
-  | A_NUMOF | DG_NUMOF -> "Numof"
+  | A_NUMOF | DG_NUMOF | PSEUDO_A_NUMOF1 -> "Numof"
   | A_ALLOC -> "Alloc"
   | A_REALLOC -> "Realloc"
   | A_FREE -> "Free"
