@@ -245,6 +245,15 @@ module Switch = struct
     { case_type; default_address; cases }
 end
 
+module ScenarioLabel = struct
+  type t = { name : string; address : int32 }
+
+  let read br =
+    let name = BR.sjis_string br in
+    let address = BR.i32 br in
+    { name; address }
+end
+
 module FuncType = struct
   type t = {
     id : int;
@@ -296,6 +305,7 @@ let readMSGF br = BR.i32 br
 let readHLL0 br = read_count_and_array br HLL.read
 let readSWI0 br = read_count_and_array br Switch.read
 let readGVER br = BR.i32 br
+let readSLBL br = read_count_and_array br ScenarioLabel.read
 let readSTR0 br = read_count_and_array br BR.sjis_string
 let readFNAM br = read_count_and_array br BR.sjis_string
 let readOJMP br = BR.i32 br
@@ -325,6 +335,7 @@ type t = {
   mutable hll0 : HLL.t array;
   mutable swi0 : Switch.t array;
   mutable gver : int32;
+  mutable slbl : ScenarioLabel.t array;
   mutable str0 : string array;
   mutable fnam : string array;
   mutable ojmp : int32;
@@ -357,6 +368,7 @@ let ain =
     hll0 = [||];
     swi0 = [||];
     gver = -1l;
+    slbl = [||];
     str0 = [||];
     fnam = [||];
     ojmp = -1l;
@@ -394,6 +406,7 @@ let readSections br =
     | "HLL0" -> ain.hll0 <- readHLL0 br
     | "SWI0" -> ain.swi0 <- readSWI0 br
     | "GVER" -> ain.gver <- readGVER br
+    | "SLBL" -> ain.slbl <- readSLBL br
     | "STR0" -> ain.str0 <- readSTR0 br
     | "FNAM" -> ain.fnam <- readFNAM br
     | "OJMP" -> ain.ojmp <- readOJMP br

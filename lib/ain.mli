@@ -96,6 +96,10 @@ module Switch : sig
   }
 end
 
+module ScenarioLabel : sig
+  type t = { name : string; address : int32 }
+end
+
 module FuncType : sig
   type t = {
     id : int;
@@ -126,6 +130,7 @@ type t = {
   mutable hll0 : HLL.t array;
   mutable swi0 : Switch.t array;
   mutable gver : int32;
+  mutable slbl : ScenarioLabel.t array;
   mutable str0 : string array;
   mutable fnam : string array;
   mutable ojmp : int32;
