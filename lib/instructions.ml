@@ -88,7 +88,7 @@ type instruction =
   | S_POP
   | S_ADD
   | S_ASSIGN
-  (* S_PLUSA        = 0x45, *)
+  | S_PLUSA
   | S_REF
   (* S_REFREF       = 0x47, *)
   | S_NOTE
@@ -386,7 +386,7 @@ let decode code_bytes =
         | 0x42 -> S_POP
         | 0x43 -> S_ADD
         | 0x44 -> S_ASSIGN
-        (* | Opcode.S_PLUSA -> S_PLUSA *)
+        | 0x45 -> S_PLUSA
         | 0x46 -> S_REF
         (* | Opcode.S_REFREF -> S_REFREF *)
         | 0x48 -> S_NOTE

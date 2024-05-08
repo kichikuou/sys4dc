@@ -699,8 +699,8 @@ let analyze ctx =
     | ( ADD | SUB | MUL | DIV | MOD | LT | GT | LTE | GTE | NOTE | EQUALE | AND
       | OR | XOR | LSHIFT | RSHIFT | F_ADD | F_SUB | F_MUL | F_DIV | F_LT | F_GT
       | F_LTE | F_GTE | F_EQUALE | F_NOTE | LI_ADD | LI_SUB | LI_MUL | LI_DIV
-      | LI_MOD | S_PLUSA2 | S_ADD | S_LT | S_GT | S_LTE | S_GTE | S_NOTE
-      | S_EQUALE | DG_PLUSA | DG_MINUSA ) as op ->
+      | LI_MOD | S_PLUSA | S_PLUSA2 | S_ADD | S_LT | S_GT | S_LTE | S_GTE
+      | S_NOTE | S_EQUALE | DG_PLUSA | DG_MINUSA ) as op ->
         binary_op ctx op
     | ( ASSIGN | F_ASSIGN | LI_ASSIGN | PLUSA | MINUSA | MULA | DIVA | MODA
       | ANDA | ORA | XORA | LSHIFTA | RSHIFTA | F_PLUSA | F_MINUSA | F_MULA

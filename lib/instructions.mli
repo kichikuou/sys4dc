@@ -86,7 +86,7 @@ type instruction =
   | S_POP
   | S_ADD
   | S_ASSIGN
-  (* S_PLUSA        = 0x45, *)
+  | S_PLUSA
   | S_REF
   (* S_REFREF       = 0x47, *)
   | S_NOTE

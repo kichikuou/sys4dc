@@ -262,7 +262,7 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
       | LI_MUL | DIV | F_DIV | LI_DIV | MOD | LI_MOD | S_MOD _ | LSHIFT | RSHIFT
       | AND | OR | XOR | PSEUDO_LOGAND | PSEUDO_LOGOR | OBJSWAP _ ->
           lt
-      | S_PLUSA2 | PSEUDO_COMMA | DG_PLUSA | DG_MINUSA -> rt
+      | S_PLUSA | S_PLUSA2 | PSEUDO_COMMA | DG_PLUSA | DG_MINUSA -> rt
       | EQUALE | S_EQUALE | F_EQUALE | R_EQUALE | NOTE | S_NOTE | F_NOTE
       | R_NOTE | LT | F_LT | S_LT | LTE | F_LTE | S_LTE | GT | F_GT | S_GT | GTE
       | F_GTE | S_GTE ->
