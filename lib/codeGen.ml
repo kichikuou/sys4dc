@@ -100,12 +100,12 @@ let strip_class_name s =
 
 let pr_array_rank ppf rank = if rank > 1 then fprintf ppf "%@%d" rank
 
-let rec pr_array_dims ppf = function
-  | [] -> ()
-  | Number n :: dims ->
-      fprintf ppf "[%ld]" n;
-      pr_array_dims ppf dims
-  | _ -> failwith "pr_array_dims: non-number"
+let pr_number ppf = function
+  | Number n -> fprintf ppf "%ld" n
+  | _ -> failwith "pr_number: non-number"
+
+let pr_array_dims ?(pr_expr = pr_number) ppf dims =
+  List.iter dims ~f:(fun e -> fprintf ppf "[%a]" pr_expr e)
 
 let pr_initval ppf (v : Ain.Variable.t) =
   match v.init_val with
@@ -392,7 +392,9 @@ let print_function ppf (func : function_t) =
         fprintf ppf "%a;\n" pr_vardecl var
     | VarDecl (var, Some (_, Call (Builtin (A_ALLOC, _), dims))) ->
         print_indent indent ppf;
-        fprintf ppf "%a%a;\n" pr_vardecl var pr_array_dims dims
+        fprintf ppf "%a%a;\n" pr_vardecl var
+          (pr_array_dims ~pr_expr:(pr_expr 0))
+          dims
     | VarDecl (var, Some (insn, e)) ->
         let op = operator insn in
         print_indent indent ppf;
