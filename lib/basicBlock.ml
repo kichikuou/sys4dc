@@ -340,7 +340,7 @@ let c_assign ctx =
     | stack -> unexpected_stack "C_ASSIGN" stack)
 
 let sr_assign ctx =
-  if Ain.ain.vers >= 11 then
+  if Ain.ain.vers <= 1 || Ain.ain.vers >= 11 then
     update_stack ctx (function
       | value :: Deref lvalue :: stack ->
           AssignOp (SR_ASSIGN, lvalue, value) :: stack
