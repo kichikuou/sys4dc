@@ -1,4 +1,5 @@
 (executable
+ (public_name sys4dc)
  (name main)
  (libraries sys4dc core_unix core_unix.command_unix)
  (preprocess
