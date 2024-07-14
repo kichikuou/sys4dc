@@ -158,6 +158,34 @@ let extract_array_dims stmt vars =
       | Some dims -> CodeGen.{ v; dims }
       | None -> { v; dims = [] })
 
+(* In Ain v0, when a Function.t is a method, its name field contains the class
+   name (the method name is not recorded anywhere). To simplify the
+   decompilation process, rename them to align with the Ain v1+ naming
+   convention. *)
+let rename_ain_v0_methods () =
+  if Ain.ain.vers = 0 then
+    Array.iteri Ain.ain.func ~f:(fun i func ->
+      match Array.find Ain.ain.strt ~f:(fun s -> String.equal s.name func.name) with
+      | Some s when s.constructor = i -> func.name <- Printf.sprintf "%s@0" func.name
+      | Some s when s.destructor = i -> func.name <- Printf.sprintf "%s@1" func.name
+      | Some _ -> func.name <- Printf.sprintf "%s@method%d" func.name i
+      | None -> ())
+
+(* Ain v0 doesn't have FUNC/EOF instructions, so insert them *)
+let rec insert_func acc next_fno = function
+  | (addr, _) as hd :: tl when next_fno < Array.length Ain.ain.func && addr = Ain.ain.func.(next_fno).address ->
+      insert_func (hd :: (addr, FUNC next_fno) :: acc) (next_fno + 1) tl
+  | hd :: tl -> insert_func (hd :: acc) next_fno tl
+  | [] -> List.rev ((-1, EOF 0) :: acc)
+
+let preprocess_ain_v0 code =
+  if Ain.ain.vers = 0 then (
+    rename_ain_v0_methods ();
+    Ain.ain.fnam <- [| "all.jaf" |];
+    insert_func [] 0 code
+  ) else
+    code
+
 type decompiled_ain = {
   structs : CodeGen.struct_t array;
   globals : CodeGen.variable list;
@@ -166,6 +194,7 @@ type decompiled_ain = {
 
 let decompile () =
   let code = Instructions.decode Ain.ain.code in
+  let code = preprocess_ain_v0 code in
   Ain.ain.ifthen_optimized <- Instructions.detect_ifthen_optimization code;
   let files = group_by_source_file code in
   let structs =
@@ -202,6 +231,7 @@ let decompile () =
 
 let inspect funcname =
   let code = Instructions.decode Ain.ain.code in
+  let code = preprocess_ain_v0 code in
   Ain.ain.ifthen_optimized <- Instructions.detect_ifthen_optimization code;
   let files = group_by_source_file code in
   match

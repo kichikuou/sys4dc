@@ -92,7 +92,7 @@ end
 module Function = struct
   type t = {
     address : int;
-    name : string;
+    mutable name : string;
     is_label : bool;
     is_lambda : bool;
     return_type : type_t;
