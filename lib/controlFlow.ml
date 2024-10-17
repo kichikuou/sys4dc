@@ -623,29 +623,35 @@ let reduce_jump cfg node0 =
       Some
         ({ code = Jump cond_addr, inc_stmts; end_addr = body_addr'; _ } as bb1)
     )
-    when body_addr = body_addr' && cond_addr = bb0.addr ->
+    when body_addr = body_addr' && cond_addr = bb0.addr -> (
       let node2 = CFG.next cfg node1 in
-      let nodek = CFG.(find_forward ~f:(by_jump_target bb1.addr) cfg node2) in
-      let break_addr = (CFG.value_exn nodek).end_addr in
-      let inc_expr =
-        if List.is_empty inc_stmts then None
-        else Some (stmt_list_to_expr inc_stmts)
-      in
-      CFG.set nodek (remove_jump (CFG.value_exn nodek));
-      let body =
-        CFG.splice cfg node2 (CFG.next cfg nodek)
-        |> generate_break_continue
-             { break_continue_record with continue_addr = bb1.addr; break_addr }
-        |> collapse
-      in
-      CFG.set node0
-        {
-          bb0 with
-          end_addr = break_addr;
-          code = (Seq, [ For (None, None, inc_expr, body) ]);
-          nr_jump_srcs = bb0.nr_jump_srcs - 1;
-        };
-      CFG.remove cfg node1
+      match CFG.(find_forward ~f:(by_jump_target bb1.addr) cfg node2) with
+      | Some _ as nodek ->
+          let break_addr = (CFG.value_exn nodek).end_addr in
+          let inc_expr =
+            if List.is_empty inc_stmts then None
+            else Some (stmt_list_to_expr inc_stmts)
+          in
+          CFG.set nodek (remove_jump (CFG.value_exn nodek));
+          let body =
+            CFG.splice cfg node2 (CFG.next cfg nodek)
+            |> generate_break_continue
+                 {
+                   break_continue_record with
+                   continue_addr = bb1.addr;
+                   break_addr;
+                 }
+            |> collapse
+          in
+          CFG.set node0
+            {
+              bb0 with
+              end_addr = break_addr;
+              code = (Seq, [ For (None, None, inc_expr, body) ]);
+              nr_jump_srcs = bb0.nr_jump_srcs - 1;
+            };
+          CFG.remove cfg node1
+      | None -> ())
   | _ -> ()
 
 let reduce cfg node0 =
