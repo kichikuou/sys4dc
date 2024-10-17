@@ -422,7 +422,9 @@ let decode code_bytes =
         | 0x5f -> SWITCH (BR.int br)
         | 0x60 -> STRSWITCH (BR.int br)
         | 0x61 -> FUNC (BR.int br)
-        | 0x62 -> if Ain.ain.vers = 0 then SH_STRUCTREF (BR.int br) else EOF (BR.int br)
+        | 0x62 ->
+            if Ain.ain.vers = 0 then SH_STRUCTREF (BR.int br)
+            else EOF (BR.int br)
         | 0x63 -> CALLSYS (BR.int br)
         | 0x64 -> SJUMP
         | 0x65 -> CALLONJUMP

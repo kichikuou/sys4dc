@@ -711,8 +711,8 @@ let analyze ctx =
     | (R_EQUALE | R_NOTE) as op -> ref_binary_op ctx op
     (* --- Strings --- *)
     | S_PUSH n ->
-      let tbl = if Ain.ain.vers = 0 then Ain.ain.msg else Ain.ain.str0 in
-      push ctx (String tbl.(n))
+        let tbl = if Ain.ain.vers = 0 then Ain.ain.msg else Ain.ain.str0 in
+        push ctx (String tbl.(n))
     | S_POP -> emit_expression ctx (pop ctx)
     | S_REF -> ref_ ctx
     | S_MOD n -> s_mod ctx n
