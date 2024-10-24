@@ -420,6 +420,14 @@ let pop_args ctx vartypes =
   in
   aux [] (List.rev vartypes)
 
+let rec reshape_args ctx (vartypes : Ain.type_t list) args =
+  match (vartypes, args) with
+  | [], [] -> []
+  | _ :: Void :: ts, page :: slot :: args ->
+      Deref (lvalue ctx page slot) :: reshape_args ctx ts args
+  | _ :: ts, arg :: args -> arg :: reshape_args ctx ts args
+  | _ -> failwith "reshape_args: argument count mismatch"
+
 let determine_functype ctx = function
   | -1l ->
       let functype_name =
@@ -581,7 +589,11 @@ let analyze ctx =
           match pop2 ctx with
           | this, Number fid -> (
               let func = Ain.ain.func.(Int32.to_int_exn fid) in
-              let e = Call (Method (this, func), args) in
+              let e =
+                Call
+                  ( Method (this, func),
+                    reshape_args ctx (Ain.Function.arg_types func) args )
+              in
               match func.return_type with
               | Void -> emit_expression ctx e
               | Ref (Int | Bool | LongInt | Float) -> pushl ctx [ e; Void ]
