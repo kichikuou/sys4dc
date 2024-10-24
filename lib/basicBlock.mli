@@ -43,6 +43,7 @@ val create :
   int ->
   Ain.Function.t ->
   Ain.Struct.t option ->
+  Ain.Function.t option (* parent *) ->
   t list
 
 (* Replace the first occurence of each local variable with the variable declaration. *)

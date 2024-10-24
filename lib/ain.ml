@@ -96,6 +96,7 @@ module Function = struct
     mutable name : string;
     is_label : bool;
     is_lambda : bool;
+    capture : bool;
     return_type : type_t;
     vars : Variable.t array;
     nr_args : int;
@@ -126,13 +127,21 @@ module Function = struct
     let return_type = read_return_type br in
     let nr_args = BR.int br in
     let nr_vars = BR.int br in
-    let is_lambda =
-      if br.context.version >= 11 then BR.bool br
-      else String.is_substring name ~substring:"<lambda :"
-    in
+    let is_lambda = String.is_substring name ~substring:"<lambda :" in
+    let capture = br.context.version >= 11 && BR.bool br in
     let crc = if br.context.version > 1 then BR.i32 br else 0l in
     let vars = read_array br nr_vars Variable.read in
-    { address; name; is_label; is_lambda; return_type; vars; nr_args; crc }
+    {
+      address;
+      name;
+      is_label;
+      is_lambda;
+      capture;
+      return_type;
+      vars;
+      nr_args;
+      crc;
+    }
 end
 
 module InitVal = struct

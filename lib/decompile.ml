@@ -27,9 +27,10 @@ type function_bytecode = {
   end_addr : int;
   code : (int * instruction) list;
   lambdas : function_bytecode list;
+  parent : Ain.Function.t option;
 }
 
-let rec parse_function func_id code =
+let rec parse_function func_id parent code =
   let lambdas = ref [] in
   let rec aux acc = function
     | (end_addr, ENDFUNC n) :: tl ->
@@ -42,10 +43,11 @@ let rec parse_function func_id code =
               end_addr;
               code = List.rev acc;
               lambdas = List.rev !lambdas;
+              parent;
             },
             tl )
     | (_, FUNC n) :: tl when Ain.ain.func.(n).is_lambda -> (
-        let lambda, code = parse_function n tl in
+        let lambda, code = parse_function n (Some Ain.ain.func.(func_id)) tl in
         lambdas := lambda :: !lambdas;
         (* Remove JUMP over the lambda *)
         match (acc, code) with
@@ -60,6 +62,7 @@ let rec parse_function func_id code =
             end_addr;
             code = List.rev acc;
             lambdas = List.rev !lambdas;
+            parent;
           },
           code )
     | hd :: tl -> aux (hd :: acc) tl
@@ -70,7 +73,7 @@ let rec parse_function func_id code =
 let parse_functions code =
   let rec aux acc = function
     | (_, FUNC func_id) :: tl ->
-        let parsed, code = parse_function func_id tl in
+        let parsed, code = parse_function func_id None tl in
         aux (parsed :: acc) code
     | [ (_, EOF _) ] -> List.rev acc
     | _ :: tl -> aux acc tl (* Junk code after EOF, ignore *)
@@ -82,7 +85,7 @@ let decompile_function (f : function_bytecode) =
   let struc, name = parse_method_name f.func.name in
   try
     let body =
-      BasicBlock.create f.code f.end_addr f.func struc
+      BasicBlock.create f.code f.end_addr f.func struc f.parent
       |> BasicBlock.generate_var_decls f.func
       |> ControlFlow.analyze
       |> TypeAnalysis.analyze_function f.func struc
@@ -104,7 +107,7 @@ let decompile_function (f : function_bytecode) =
 
 let inspect_function (f : function_bytecode) =
   let struc, name = parse_method_name f.func.name in
-  (BasicBlock.create f.code f.end_addr f.func struc
+  (BasicBlock.create f.code f.end_addr f.func struc f.parent
   |> (fun bbs ->
        Stdio.printf "BasicBlock representation:\n%s\n\n"
          ([%show: BasicBlock.t list] bbs);

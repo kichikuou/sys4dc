@@ -16,11 +16,7 @@
 
 open Base
 
-type page_value =
-  | GlobalPage
-  | LocalPage
-  (* ctx.func.Vars *)
-  | StructPage
+type page_value = GlobalPage | LocalPage | StructPage | ParentPage
 [@@deriving show { with_path = false }]
 
 type incdec_fix = Prefix | Postfix [@@deriving show { with_path = false }]

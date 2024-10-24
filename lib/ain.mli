@@ -37,6 +37,7 @@ module Function : sig
     mutable name : string;
     is_label : bool;
     is_lambda : bool;
+    capture : bool;
     return_type : type_t;
     vars : Variable.t array;
     nr_args : int;

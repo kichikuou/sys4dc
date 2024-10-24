@@ -126,6 +126,7 @@ let make_basic_blocks func_end_addr code =
 type analyze_context = {
   func : Ain.Function.t;
   struc : Ain.Struct.t option;
+  parent : Ain.Function.t option;
   mutable instructions : instruction list;
   mutable stack : expr list;
   mutable stmts : statement list;
@@ -195,6 +196,7 @@ let varref ctx page n =
   | GlobalPage -> Ain.ain.glob.(n)
   | LocalPage -> ctx.func.vars.(n)
   | StructPage -> (Option.value_exn ctx.struc).members.(n)
+  | ParentPage -> (Option.value_exn ctx.parent).vars.(n)
 
 let pageref ctx page n = PageRef (page, varref ctx page n)
 
@@ -536,6 +538,10 @@ let analyze ctx =
     | PUSHGLOBALPAGE -> push ctx (Page GlobalPage)
     | PUSHLOCALPAGE -> push ctx (Page LocalPage)
     | PUSHSTRUCTPAGE -> push ctx (Page StructPage)
+    | X_GETENV -> (
+        match pop ctx with
+        | Page LocalPage -> push ctx (Page ParentPage)
+        | e -> unexpected_stack "X_GETENV" (e :: ctx.stack))
     | (S_ASSIGN | DG_ASSIGN) as op -> assign_op2 ctx op
     | SH_GLOBALREF n -> push ctx (Deref (pageref ctx GlobalPage n))
     | SH_LOCALREF n -> push ctx (Deref (pageref ctx LocalPage n))
@@ -1173,10 +1179,10 @@ let rec replace_delegate_calls acc = function
   | insn :: rest -> replace_delegate_calls (insn :: acc) rest
   | [] -> List.rev acc
 
-let create code end_addr func struc =
+let create code end_addr func struc parent =
   code |> replace_delegate_calls [] |> make_basic_blocks end_addr
   |> analyze_basic_blocks
-       { func; struc; instructions = []; stack = []; stmts = [] }
+       { func; struc; parent; instructions = []; stack = []; stmts = [] }
        []
 
 let generate_var_decls (func : Ain.Function.t) bbs =
