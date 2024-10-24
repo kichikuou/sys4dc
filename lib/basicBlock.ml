@@ -380,6 +380,14 @@ let objswap ctx type_ =
     | stack -> unexpected_stack "OBJSWAP" stack
 
 let incdec ctx op =
+  let consume_localref varno =
+    match ctx.instructions with
+    | PUSHLOCALPAGE :: PUSH varno' :: REF :: rest when Int32.equal varno varno'
+      ->
+        ctx.instructions <- rest;
+        true
+    | _ -> false
+  in
   update_stack ctx (function
     | slot :: page :: slot' :: page' :: stack'
       when phys_equal page page' && phys_equal slot slot' ->
@@ -397,11 +405,11 @@ let incdec ctx op =
     | Void :: DerefRef lval :: Deref (RefRef lval') :: stack'
       when phys_equal lval lval' ->
         Deref (IncDec (Postfix, op, lval)) :: stack'
-    (* index variable of foreach statement *)
-    | [ Number slot; Page LocalPage ] ->
+    (* index variable of foreach statement. `.LOCALINC var; .LOCALREF var` *)
+    | [ Number slot; Page LocalPage ] when consume_localref slot ->
         [
           Deref
-            (IncDec (Postfix, op, pageref ctx LocalPage (Int32.to_int_exn slot)));
+            (IncDec (Prefix, op, pageref ctx LocalPage (Int32.to_int_exn slot)));
         ]
     | stack -> unexpected_stack (show_incdec_op op) stack)
 
@@ -1057,15 +1065,6 @@ let rec analyze_basic_blocks ctx stack = function
       List.map stack ~f:(fun bb ->
           match bb.code with
           | b, [], ss -> { bb with code = (b, ss) }
-          (* Replace `var++; var < rhs` with `var++ < rhs` in foreach statement *)
-          | ( Branch (addr, BinaryOp (LT, Deref (PageRef (LocalPage, var)), rhs)),
-              [
-                (Deref (IncDec (Postfix, Increment, PageRef (LocalPage, var')))
-                 as inc);
-              ],
-              ss )
-            when phys_equal var var' ->
-              { bb with code = (Branch (addr, BinaryOp (LT, inc, rhs)), ss) }
           | _ ->
               Printf.failwithf "non-empty stack in analyzed basic block: %s"
                 ([%show: (terminator * expr list * statement list) basic_block]
