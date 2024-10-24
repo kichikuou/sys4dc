@@ -38,11 +38,12 @@ type type_t = Type.ain_type [@@deriving show]
 let rec read_variable_type br =
   let enum = BR.int br in
   let struc = BR.int br in
-  let rank = BR.int br in
-  (* if (AIN_VERSION_GTE(ain, 11, 0)) { ... } *)
-  if br.context.version >= 11 && rank > 0 then
-    Type.Array (read_variable_type br)
-  else Type.create enum ~struc ~rank
+  if br.context.version >= 11 then
+    let subtype = if BR.bool br then Some (read_variable_type br) else None in
+    Type.create_ain11 enum ~struc ~subtype
+  else
+    let rank = BR.int br in
+    Type.create enum ~struc ~rank
 
 let read_return_type (br : reader_context BR.t) =
   if br.context.version >= 11 then read_variable_type br

@@ -48,6 +48,7 @@ type ain_type =
 and func_type = { return_type : ain_type; arg_types : ain_type list }
 
 val create : int -> struc:int -> rank:int -> ain_type
+val create_ain11 : int -> struc:int -> subtype:ain_type option -> ain_type
 val size_in_stack : ain_type -> int
 val array_base_and_rank : ain_type -> ain_type * int
 val replace_hll_param : ain_type -> ain_type -> ain_type

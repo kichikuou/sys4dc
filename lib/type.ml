@@ -157,6 +157,25 @@ let create enum ~struc ~rank =
   | 80 -> Ref (make_array Any rank)
   | _ as tag -> Printf.failwithf "unknown type enum %d" tag ()
 
+let create_ain11 enum ~struc ~subtype =
+  match enum with
+  | 0 -> Void
+  | 10 -> Int
+  | 11 -> Float
+  | 12 -> String
+  | 13 -> Struct struc
+  | 18 -> Ref Int
+  | 19 -> Ref Float
+  | 20 -> Ref String
+  | 21 -> Ref (Struct struc)
+  | 47 -> Bool
+  | 51 -> Ref Bool
+  | 63 -> Delegate (TypeVar.create Var)
+  | 79 -> Array (Option.value_exn subtype)
+  | 80 -> Ref (Array (Option.value_exn subtype))
+  | 82 -> Ref (Option.value_exn subtype)
+  | _ -> Printf.failwithf "unknown type enum %d" enum ()
+
 let rec array_base_and_rank = function
   | Array t ->
       let base, rank = array_base_and_rank t in
