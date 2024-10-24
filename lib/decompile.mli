@@ -18,6 +18,8 @@ type decompiled_ain = {
   structs : CodeGen.struct_t array;
   globals : CodeGen.variable list;
   srcs : (string * CodeGen.function_t list) list;
+  succeed : int;
+  failed : int;
 }
 
 val decompile : unit -> decompiled_ain

@@ -36,6 +36,8 @@ let command =
   Command.basic ~summary:"Decompile an .ain file"
     (let%map_open.Command output_dir =
        flag "-o" (optional string) ~doc:"directory Output directory"
+     and count_failed =
+       flag "-count-failed" no_arg ~doc:"Count failed functions"
      and inspect_function =
        flag "-inspect" (optional string)
          ~doc:"function Inspect the decompilation process of a function"
@@ -45,9 +47,13 @@ let command =
        match inspect_function with
        | None ->
            let decompiled = Decompile.decompile () in
-           Decompile.export decompiled
-             (Filename.basename ain_file)
-             (output_formatter_getter output_dir)
+           if count_failed then
+             printf "%d / %d functions failed\n" decompiled.failed
+               (decompiled.succeed + decompiled.failed)
+           else
+             Decompile.export decompiled
+               (Filename.basename ain_file)
+               (output_formatter_getter output_dir)
        | Some funcname -> Decompile.inspect funcname)
 
 let () = Command_unix.run command

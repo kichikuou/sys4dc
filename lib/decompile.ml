@@ -83,27 +83,21 @@ let parse_functions code =
 
 let decompile_function (f : function_bytecode) =
   let struc, name = parse_method_name f.func.name in
-  try
-    let body =
-      BasicBlock.create f.code f.end_addr f.func struc f.parent
-      |> BasicBlock.generate_var_decls f.func
-      |> ControlFlow.analyze
-      |> TypeAnalysis.analyze_function f.func struc
-      |> Transform.rename_labels |> Transform.recover_loop_initializer
-      |> Transform.remove_array_initializer_call
-      |> Transform.remove_implicit_array_free
-      |> Transform.remove_generated_lockpeek
-      |> Transform.remove_redundant_return
-      |> Transform.remove_dummy_variable_assignment
-      |> Transform.remove_vardecl_default_rhs
-      |> Transform.fold_newline_func_to_msg
-      |> Transform.remove_optional_arguments
-      |> if Ain.ain.vers >= 6 then Transform.simplify_boolean_expr else Fn.id
-    in
-    CodeGen.{ func = f.func; struc; name; body }
-  with e ->
-    Stdio.eprintf "Error while decompiling function %s\n" f.func.name;
-    raise e
+  let body =
+    BasicBlock.create f.code f.end_addr f.func struc f.parent
+    |> BasicBlock.generate_var_decls f.func
+    |> ControlFlow.analyze
+    |> TypeAnalysis.analyze_function f.func struc
+    |> Transform.rename_labels |> Transform.recover_loop_initializer
+    |> Transform.remove_array_initializer_call
+    |> Transform.remove_implicit_array_free
+    |> Transform.remove_generated_lockpeek |> Transform.remove_redundant_return
+    |> Transform.remove_dummy_variable_assignment
+    |> Transform.remove_vardecl_default_rhs
+    |> Transform.fold_newline_func_to_msg |> Transform.remove_optional_arguments
+    |> if Ain.ain.vers >= 6 then Transform.simplify_boolean_expr else Fn.id
+  in
+  CodeGen.{ func = f.func; struc; name; body }
 
 let inspect_function (f : function_bytecode) =
   let struc, name = parse_method_name f.func.name in
@@ -198,6 +192,8 @@ type decompiled_ain = {
   structs : CodeGen.struct_t array;
   globals : CodeGen.variable list;
   srcs : (string * CodeGen.function_t list) list;
+  succeed : int;
+  failed : int;
 }
 
 let decompile () =
@@ -211,31 +207,41 @@ let decompile () =
           { struc; members = to_variable_list struc.members; methods = [] })
   in
   let globals = ref (to_variable_list Ain.ain.glob) in
+  let succeed = ref 0 in
+  let failed = ref 0 in
   let srcs =
     List.map files ~f:(fun (fname, code_in_file) ->
         let funcs = parse_functions code_in_file in
         let decompiled_funcs = ref [] in
         let rec process_func func =
-          let f = decompile_function func in
-          (match f with
-          | { struc = Some struc; _ } ->
-              let s = structs.(struc.id) in
-              if String.equal f.name "2" then
-                s.members <- extract_array_dims f.body struc.members
-              else (
-                if not f.func.is_lambda then s.methods <- f :: s.methods;
-                decompiled_funcs := f :: !decompiled_funcs)
-          | { struc = None; name = "0"; _ } ->
-              globals := extract_array_dims f.body Ain.ain.glob
-          | { struc = None; name = "NULL"; _ } -> ()
-          | _ -> decompiled_funcs := f :: !decompiled_funcs);
+          (try
+             let f = decompile_function func in
+             (match f with
+             | { struc = Some struc; _ } ->
+                 let s = structs.(struc.id) in
+                 if String.equal f.name "2" then
+                   s.members <- extract_array_dims f.body struc.members
+                 else (
+                   if not f.func.is_lambda then s.methods <- f :: s.methods;
+                   decompiled_funcs := f :: !decompiled_funcs)
+             | { struc = None; name = "0"; _ } ->
+                 globals := extract_array_dims f.body Ain.ain.glob
+             | { struc = None; name = "NULL"; _ } -> ()
+             | _ -> decompiled_funcs := f :: !decompiled_funcs);
+             succeed := !succeed + 1
+           with e ->
+             Stdio.printf "Error while decompiling function %s (%d bytes)\n"
+               func.func.name
+               (func.end_addr - func.func.address);
+             Stdio.printf "%s\n" (Exn.to_string e);
+             failed := !failed + 1);
           List.iter func.lambdas ~f:process_func
         in
         List.iter funcs ~f:process_func;
         (fname, List.rev !decompiled_funcs))
   in
   Array.iter structs ~f:(fun s -> s.methods <- List.rev s.methods);
-  { srcs; structs; globals = !globals }
+  { srcs; structs; globals = !globals; succeed = !succeed; failed = !failed }
 
 let inspect funcname =
   let code = Instructions.decode Ain.ain.code in
