@@ -64,7 +64,6 @@ and expr =
   | UnaryOp of Instructions.instruction * expr
   | BinaryOp of Instructions.instruction * expr * expr
   | AssignOp of Instructions.instruction * lvalue * expr
-  | StringFormat of int * expr * expr (* type, lhs, rhs *)
   | Call of callable * expr list (* func, args *)
   | TernaryOp of expr * expr * expr
   | DelegateCast of expr * int (* str, dg_type *)
@@ -193,8 +192,6 @@ let map_expr stmt ~f =
         BinaryOp (inst, rec_expr lhs, rec_expr rhs) |> f
     | AssignOp (inst, lval, expr) ->
         AssignOp (inst, rec_lvalue lval, rec_expr expr) |> f
-    | StringFormat (ty, lhs, rhs) ->
-        StringFormat (ty, rec_expr lhs, rec_expr rhs) |> f
     | Call (c, args) -> Call (rec_callable c, List.map args ~f:rec_expr) |> f
     | TernaryOp (e1, e2, e3) ->
         TernaryOp (rec_expr e1, rec_expr e2, rec_expr e3) |> f
@@ -277,9 +274,6 @@ let walk ?(stmt_cb = fun _ -> ()) ?(expr_cb = fun _ -> ())
     | AssignOp (_, lval, expr) ->
         rec_lvalue lval;
         rec_expr expr
-    | StringFormat (_, lhs, rhs) ->
-        rec_expr lhs;
-        rec_expr rhs
     | Call (c, args) ->
         rec_callable c;
         List.iter args ~f:rec_expr

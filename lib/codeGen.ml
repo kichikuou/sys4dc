@@ -300,8 +300,6 @@ let print_function ppf (func : function_t) =
     | AssignOp (insn, lval, rhs) ->
         let op = operator insn in
         pr_binary_op parent_op prec op ppf (Deref lval) rhs
-    | StringFormat (n, lhs, rhs) ->
-        pr_binary_op parent_op prec (operator (S_MOD n)) ppf lhs rhs
     | TernaryOp (expr1, expr2, expr3) ->
         let op_prec = prec_value PREC_QUESTION in
         open_paren prec op_prec ppf;

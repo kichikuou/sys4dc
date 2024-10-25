@@ -304,17 +304,6 @@ let builtin2 ctx insn nr_args =
     | expr :: rest -> Call (Builtin2 (insn, expr), args) :: rest
     | stack -> unexpected_stack (show_instruction insn) (List.rev args @ stack))
 
-let s_mod ctx n =
-  if Ain.ain.vers > 8 then
-    update_stack ctx (function
-      | rhs :: lhs :: stack -> StringFormat (n, lhs, rhs) :: stack
-      | stack -> unexpected_stack "S_MOD" stack)
-  else
-    update_stack ctx (function
-      | Number n :: rhs :: lhs :: stack ->
-          StringFormat (Int32.to_int_exn n, lhs, rhs) :: stack
-      | stack -> unexpected_stack "S_MOD" stack)
-
 let s_erase2 ctx =
   match take_stack ctx with
   | [ _; index; str ] ->
@@ -753,7 +742,17 @@ let analyze ctx =
         push ctx (String tbl.(n))
     | S_POP -> emit_expression ctx (pop ctx)
     | S_REF -> ref_ ctx
-    | S_MOD n -> s_mod ctx n
+    | S_MOD t ->
+        let t =
+          if Ain.ain.vers <= 8 then
+            match pop ctx with
+            | Number t -> Int32.to_int_exn t
+            | e ->
+                Printf.failwithf "S_MOD: unexpected argument %s" (show_expr e)
+                  ()
+          else t
+        in
+        binary_op ctx (S_MOD t)
     | S_LENGTH -> builtin ctx S_LENGTH 0
     | S_LENGTH2 -> builtin2 ctx S_LENGTH2 0
     | S_LENGTHBYTE -> builtin ctx S_LENGTHBYTE 0

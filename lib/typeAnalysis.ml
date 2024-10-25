@@ -156,10 +156,6 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     | UnaryOp (insn, e) -> analyze_unary_op insn e
     | BinaryOp (insn, lhs, rhs) -> analyze_binary_op insn lhs rhs
     | AssignOp (insn, lval, rhs) -> analyze_assign_op insn lval rhs
-    | StringFormat (ty, lhs, rhs) ->
-        let lhs', _lt = analyze_expr String lhs
-        and rhs', _rt = analyze_expr Any rhs in
-        (StringFormat (ty, lhs', rhs'), String)
     | Call (f, args) ->
         let f', return_type, arg_types = analyze_callable args f in
         let arg_types' =
