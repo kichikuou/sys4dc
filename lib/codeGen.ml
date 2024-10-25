@@ -279,6 +279,7 @@ let print_function ppf (func : function_t) =
     | DerefStruct (_, expr) -> pr_expr prec ppf expr
     | Page StructPage -> pp_print_string ppf "this"
     | Null -> pp_print_string ppf "NULL"
+    | Nullable expr -> fprintf ppf "%a?" (pr_expr (prec_value PREC_DOT)) expr
     | Void -> pp_print_string ppf "<void>" (* FIXME *)
     | UnaryOp (FTOI, expr) -> fprintf ppf "int(%a)" (pr_expr 0) expr
     | UnaryOp (ITOF, expr) -> fprintf ppf "float(%a)" (pr_expr 0) expr

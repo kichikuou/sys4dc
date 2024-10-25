@@ -595,8 +595,9 @@ let analyze ctx =
     | CALLMETHOD n -> (
         if Ain.ain.vers >= 11 then
           let args = pop_n ctx n in
-          match pop2 ctx with
-          | this, Number fid -> (
+          match ctx.stack with
+          | Number fid :: this :: stack -> (
+              ctx.stack <- stack;
               let func = Ain.ain.func.(Int32.to_int_exn fid) in
               let e =
                 Call
@@ -607,7 +608,17 @@ let analyze ctx =
               | Void -> emit_expression ctx e
               | Ref (Int | Bool | LongInt | Float) -> pushl ctx [ e; Void ]
               | _ -> push ctx e)
-          | a, b -> unexpected_stack "CALLMETHOD" (a :: b :: ctx.stack)
+          | [ Number fid ] ->
+              (* <prev_bb>?.method(...) *)
+              ctx.stack <- [];
+              let func = Ain.ain.func.(Int32.to_int_exn fid) in
+              let e =
+                Call
+                  ( Method (Nullable Void, func),
+                    reshape_args ctx (Ain.Function.arg_types func) args )
+              in
+              push ctx e
+          | stack -> unexpected_stack "CALLMETHOD" stack
         else
           let func = Ain.ain.func.(n) in
           let args = pop_args ctx (Ain.Function.arg_types func) in
@@ -1082,6 +1093,8 @@ let rec analyze_basic_blocks ctx stack = function
                    bb)
                 ())
       |> List.rev
+  | { code = POP :: _; _ } :: _ ->
+      Printf.failwithf "unexpected POP instruction in basic block" ()
   | bb :: rest ->
       ctx.instructions <- bb.code;
       let fragment = analyze ctx in
@@ -1162,6 +1175,53 @@ and reduce ctx stack rest =
           in
           reduce ctx (top' :: stack') rest
       | _ -> failwith "not implemented")
+  (* ?. method call *)
+  | {
+      code =
+        ( Jump label2,
+          [ Number 0l; Call (Method (Nullable Void, func), args) ],
+          [] );
+      end_addr = addr1;
+      _;
+    }
+    :: ({ code = Branch (label1, _cond), expr :: estack, stmts; _ } as top)
+    :: stack'
+    when addr1 = label1 -> (
+      match (func.return_type, rest) with
+      | Void, { code = [ POP; PUSH -1l ]; end_addr = addr2; _ } :: bb' :: rest'
+        when addr2 = label2 ->
+          let bbs =
+            { top with code = bb'.code; end_addr = bb'.end_addr } :: rest'
+          in
+          analyze_basic_blocks
+            {
+              ctx with
+              stack = Call (Method (Nullable expr, func), args) :: estack;
+              stmts;
+            }
+            stack' bbs
+      | ( Int,
+          { code = [ POP; PUSH -1l; PUSH -1l ]; end_addr = addr2; _ }
+          :: { code = [ PUSH -1l; EQUALE; IFZ label3 ]; _ }
+          :: { code = [ POP; PUSH 0l ]; end_addr = addr3; _ }
+          :: bb' :: rest' )
+      | ( String,
+          { code = [ POP; PUSH -1l; PUSH -1l ]; end_addr = addr2; _ }
+          :: { code = [ PUSH -1l; EQUALE; IFZ label3 ]; _ }
+          :: { code = [ DELETE; S_PUSH 0 ]; end_addr = addr3; _ }
+          :: bb' :: rest' )
+        when addr2 = label2 && addr3 = label3 ->
+          let bbs =
+            { top with code = bb'.code; end_addr = bb'.end_addr } :: rest'
+          in
+          analyze_basic_blocks
+            {
+              ctx with
+              stack = Call (Method (Nullable expr, func), args) :: estack;
+              stmts;
+            }
+            stack' bbs
+      | _ -> failwith "unhandled ?. method call")
   | ({ code = Seq, (_ :: _ as estack), stmts; _ } as top) :: stack' -> (
       match rest with
       | bb' :: rest' ->

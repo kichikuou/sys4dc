@@ -58,6 +58,7 @@ and expr =
   | Deref of lvalue
   | DerefRef of lvalue
   | Null
+  | Nullable of expr
   | Void
   | New of int
   | DerefStruct of int * expr
@@ -184,6 +185,7 @@ let map_expr stmt ~f =
     | Deref lval -> Deref (rec_lvalue lval) |> f
     | DerefRef lval -> DerefRef (rec_lvalue lval) |> f
     | Null -> f Null
+    | Nullable expr -> Nullable (rec_expr expr) |> f
     | Void -> f Void
     | New _ as expr -> f expr
     | DerefStruct (n, expr) -> DerefStruct (n, rec_expr expr) |> f
@@ -264,6 +266,7 @@ let walk ?(stmt_cb = fun _ -> ()) ?(expr_cb = fun _ -> ())
     | Deref lval -> rec_lvalue lval
     | DerefRef lval -> rec_lvalue lval
     | Null -> ()
+    | Nullable expr -> rec_expr expr
     | Void -> ()
     | New _ -> ()
     | DerefStruct (_, expr) -> rec_expr expr
