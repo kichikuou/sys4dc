@@ -507,12 +507,22 @@ let analyze ctx =
           | a :: b :: stack -> a :: b :: a :: b :: stack
           | stack -> unexpected_stack "DUP2" stack)
     | DUP_X2 -> (
-        match List.hd ctx.instructions with
-        | Some POP ->
-            fetch_instruction ctx |> ignore;
+        match ctx.instructions with
+        | POP :: rest ->
+            ctx.instructions <- rest;
             update_stack ctx (function
               | a :: b :: c :: stack -> b :: c :: a :: stack
               | stack -> unexpected_stack "DUP_X2; POP" stack)
+        | CALLMETHOD 1 :: ((SH_LOCALDELETE _ | POP) :: _ as rest)
+        | A_REF :: CALLMETHOD 1 :: ((SH_LOCALDELETE _ | DELETE) :: _ as rest)
+          when Ain.ain.vers >= 11 ->
+            let rec remove_local_delete = function
+              | SH_LOCALDELETE _ :: rest -> remove_local_delete rest
+              | (POP | DELETE) :: rest -> rest
+              | _ ->
+                  failwith "unexpected instructions after DUP_X2; CALLMETHOD 1"
+            in
+            ctx.instructions <- CALLMETHOD 1 :: remove_local_delete rest
         | _ ->
             update_stack ctx (function
               | a :: b :: c :: stack -> a :: b :: c :: a :: stack
