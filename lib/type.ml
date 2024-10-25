@@ -108,7 +108,9 @@ type ain_type =
 
 and func_type = { return_type : ain_type; arg_types : ain_type list }
 
-let size_in_stack = function Ref (Int | LongInt | Bool | Float) -> 2 | _ -> 1
+let size_in_stack = function
+  | Ref (Int | LongInt | Bool | Float) | HllFunc2 -> 2
+  | _ -> 1
 
 let rec make_array base = function
   | 0 -> base

@@ -420,13 +420,19 @@ let pop_args ctx vartypes =
     match vartypes with
     | [] -> acc
     | Void :: ts -> aux acc ts
-    | t :: ts ->
-        if Type.size_in_stack t = 1 then
-          let arg = pop ctx in
-          aux (arg :: acc) ts
-        else
-          let page, slot = pop2 ctx in
-          aux (Deref (lvalue ctx page slot) :: acc) ts
+    | Ref (Int | LongInt | Bool | Float) :: ts ->
+        let page, slot = pop2 ctx in
+        aux (Deref (lvalue ctx page slot) :: acc) ts
+    | HllFunc2 :: ts -> (
+        match pop2 ctx with
+        | obj, Number fno ->
+            aux
+              (BoundMethod (obj, Ain.ain.func.(Int32.to_int_exn fno)) :: acc)
+              ts
+        | a, b -> unexpected_stack "pop_args" (a :: b :: ctx.stack))
+    | _ :: ts ->
+        let arg = pop ctx in
+        aux (arg :: acc) ts
   in
   aux [] (List.rev vartypes)
 
