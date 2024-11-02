@@ -15,6 +15,7 @@
  *)
 
 open Base
+open Loc
 open Ast
 open Instructions
 
@@ -78,13 +79,13 @@ let make_basic_blocks func_end_addr code =
     add 1 [ Default sw_id ] (Int32.to_int_exn sw.default_address)
   in
   let rec scan = function
-    | (_, SWITCH n) :: tl ->
+    | { txt = SWITCH n; _ } :: tl ->
         add_case_addrs n false;
         add_and_scan tl
-    | (_, STRSWITCH n) :: tl ->
+    | { txt = STRSWITCH n; _ } :: tl ->
         add_case_addrs n true;
         add_and_scan tl
-    | (_, op) :: tl -> (
+    | { txt = op; _ } :: tl -> (
         match branch_target op with
         | Some addr ->
             add 1 [] addr;
@@ -93,20 +94,20 @@ let make_basic_blocks func_end_addr code =
     | [] -> ()
   and add_and_scan code =
     match code with
-    | (addr, _) :: _ ->
-        add 0 [] addr;
+    | hd :: _ ->
+        add 0 [] hd.addr;
         scan code
     | [] -> ()
   in
   add_and_scan code;
   let rec aux acc = function
-    | (addr, inst) :: tl ->
+    | { addr; txt = inst } :: tl ->
         let insts, rest =
-          List.split_while tl ~f:(function addr, _ ->
+          List.split_while tl ~f:(function { addr; _ } ->
               not (Hashtbl.mem head_addrs addr))
         in
         let end_addr =
-          match rest with (addr, _) :: _ -> addr | [] -> func_end_addr
+          match rest with { addr; _ } :: _ -> addr | [] -> func_end_addr
         in
         let nr_jump_srcs, labels = Hashtbl.find_exn head_addrs addr in
         let basic_block =
@@ -114,7 +115,7 @@ let make_basic_blocks func_end_addr code =
             addr;
             end_addr;
             labels;
-            code = inst :: List.map insts ~f:snd;
+            code = inst :: List.map insts ~f:(fun { txt; _ } -> txt);
             nr_jump_srcs;
           }
         in
@@ -1174,13 +1175,15 @@ and reduce ctx stack rest =
       analyze_basic_blocks { ctx with stack = []; stmts = [] } stack' rest
 
 let rec replace_delegate_calls acc = function
-  | (addr1, DG_CALLBEGIN dg_type)
-    :: (addr2, DG_CALL (dg_type', addr4))
-    :: (addr3, (JUMP addr2' as jump_op))
+  | { addr = addr1; txt = DG_CALLBEGIN dg_type }
+    :: { addr = addr2; txt = DG_CALL (dg_type', addr4) }
+    :: { addr = addr3; txt = JUMP addr2' as jump_op }
     :: rest
     when dg_type = dg_type' && addr2 = addr2'
          && addr4 = addr3 + Instructions.width jump_op ->
-      replace_delegate_calls ((addr1, PSEUDO_DG_CALL dg_type) :: acc) rest
+      replace_delegate_calls
+        ({ addr = addr1; txt = PSEUDO_DG_CALL dg_type } :: acc)
+        rest
   | insn :: rest -> replace_delegate_calls (insn :: acc) rest
   | [] -> List.rev acc
 

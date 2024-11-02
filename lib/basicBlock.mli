@@ -14,6 +14,8 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
+open Loc
+
 type terminator =
   | Seq
   | Jump of int (* addr *)
@@ -39,7 +41,7 @@ type 'a basic_block = {
 type t = fragment basic_block [@@deriving show { with_path = false }]
 
 val create :
-  (int * Instructions.instruction) list ->
+  Instructions.instruction loc list ->
   int ->
   Ain.Function.t ->
   Ain.Struct.t option ->

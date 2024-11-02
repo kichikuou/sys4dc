@@ -15,6 +15,7 @@
  *)
 
 open Base
+open Loc
 open Instructions
 
 let parse_method_name s =
@@ -25,7 +26,7 @@ let parse_method_name s =
 type function_bytecode = {
   func : Ain.Function.t;
   end_addr : int;
-  code : (int * instruction) list;
+  code : instruction loc list;
   lambdas : function_bytecode list;
   parent : Ain.Function.t option;
 }
@@ -33,7 +34,7 @@ type function_bytecode = {
 let rec parse_function func_id parent code =
   let lambdas = ref [] in
   let rec aux acc = function
-    | (end_addr, ENDFUNC n) :: tl ->
+    | { addr = end_addr; txt = ENDFUNC n } :: tl ->
         if n <> func_id then
           Printf.failwithf "Unexpected ENDFUNC %d at 0x%x (ENDFUNC %d expected)"
             n end_addr func_id ()
@@ -46,16 +47,17 @@ let rec parse_function func_id parent code =
               parent;
             },
             tl )
-    | (_, FUNC n) :: tl when Ain.ain.func.(n).is_lambda -> (
+    | { txt = FUNC n; _ } :: tl when Ain.ain.func.(n).is_lambda -> (
         let lambda, code = parse_function n (Some Ain.ain.func.(func_id)) tl in
         lambdas := lambda :: !lambdas;
         (* Remove JUMP over the lambda *)
         match (acc, code) with
-        | (addr1, JUMP addr2) :: acc_tl, (addr2', insn) :: code_tl
+        | ( { addr = addr1; txt = JUMP addr2 } :: acc_tl,
+            { addr = addr2'; txt = insn } :: code_tl )
           when addr2 = addr2' ->
-            aux acc_tl ((addr1, insn) :: code_tl)
+            aux acc_tl ({ addr = addr1; txt = insn } :: code_tl)
         | _, _ -> Printf.failwithf "No JUMP that skips %s" lambda.func.name ())
-    | (end_addr, (FUNC _ | EOF _)) :: _ as code ->
+    | { addr = end_addr; txt = FUNC _ | EOF _ } :: _ as code ->
         (* constructors are missing ENDFUNCs. *)
         ( {
             func = Ain.ain.func.(func_id);
@@ -72,10 +74,10 @@ let rec parse_function func_id parent code =
 
 let parse_functions code =
   let rec aux acc = function
-    | (_, FUNC func_id) :: tl ->
+    | { txt = FUNC func_id; _ } :: tl ->
         let parsed, code = parse_function func_id None tl in
         aux (parsed :: acc) code
-    | [ (_, EOF _) ] -> List.rev acc
+    | [ { txt = EOF _; _ } ] -> List.rev acc
     | _ :: tl -> aux acc tl (* Junk code after EOF, ignore *)
     | [] -> failwith "unexpected end of code section"
   in
@@ -137,7 +139,7 @@ let group_by_source_file code =
     | [] ->
         assert (List.is_empty curr);
         List.rev acc
-    | ((_, EOF n) as hd) :: tl ->
+    | ({ txt = EOF n; _ } as hd) :: tl ->
         aux ((Ain.ain.fnam.(n), List.rev (hd :: curr)) :: acc) [] tl
     | hd :: tl -> aux acc (hd :: curr) tl
   in
@@ -180,12 +182,12 @@ let rename_ain_v0_methods () =
 
 (* Ain v0 doesn't have FUNC/EOF instructions, so insert them *)
 let rec insert_func acc next_fno = function
-  | ((addr, _) as hd) :: tl
+  | ({ addr; _ } as hd) :: tl
     when next_fno < Array.length Ain.ain.func
          && addr = Ain.ain.func.(next_fno).address ->
-      insert_func (hd :: (addr, FUNC next_fno) :: acc) (next_fno + 1) tl
+      insert_func (hd :: { addr; txt = FUNC next_fno } :: acc) (next_fno + 1) tl
   | hd :: tl -> insert_func (hd :: acc) next_fno tl
-  | [] -> List.rev ((-1, EOF 0) :: acc)
+  | [] -> List.rev ({ addr = -1; txt = EOF 0 } :: acc)
 
 let preprocess_ain_v0 code =
   if Ain.ain.vers = 0 then (

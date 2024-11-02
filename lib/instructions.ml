@@ -15,6 +15,7 @@
  *)
 
 open Base
+open Loc
 open Type
 module BR = BytesReader
 
@@ -315,435 +316,439 @@ let decode code_bytes =
   while not (BR.eof br) do
     let addr = BR.get_pos br in
     push
-      ( addr,
-        match BR.u16 br with
-        | 0x00 -> PUSH (BR.i32 br)
-        | 0x01 -> POP
-        | 0x02 -> REF
-        | 0x03 -> REFREF
-        | 0x04 -> PUSHGLOBALPAGE
-        | 0x05 -> PUSHLOCALPAGE
-        | 0x06 -> INV
-        | 0x07 -> NOT
-        | 0x08 -> COMPL
-        | 0x09 -> ADD
-        | 0x0a -> SUB
-        | 0x0b -> MUL
-        | 0x0c -> DIV
-        | 0x0d -> MOD
-        | 0x0e -> AND
-        | 0x0f -> OR
-        | 0x10 -> XOR
-        | 0x11 -> LSHIFT
-        | 0x12 -> RSHIFT
-        | 0x13 -> LT
-        | 0x14 -> GT
-        | 0x15 -> LTE
-        | 0x16 -> GTE
-        | 0x17 -> NOTE
-        | 0x18 -> EQUALE
-        | 0x19 -> ASSIGN
-        | 0x1a -> PLUSA
-        | 0x1b -> MINUSA
-        | 0x1c -> MULA
-        | 0x1d -> DIVA
-        | 0x1e -> MODA
-        | 0x1f -> ANDA
-        | 0x20 -> ORA
-        | 0x21 -> XORA
-        | 0x22 -> LSHIFTA
-        | 0x23 -> RSHIFTA
-        | 0x24 -> F_ASSIGN
-        | 0x25 -> F_PLUSA
-        | 0x26 -> F_MINUSA
-        | 0x27 -> F_MULA
-        | 0x28 -> F_DIVA
-        | 0x29 -> DUP2
-        | 0x2a -> DUP_X2
-        (* | Opcode.CMP -> CMP *)
-        | 0x2c -> JUMP (BR.int br)
-        | 0x2d -> IFZ (BR.int br)
-        | 0x2e -> IFNZ (BR.int br)
-        | 0x2f -> RETURN
-        | 0x30 -> CALLFUNC (BR.int br)
-        | 0x31 -> INC
-        | 0x32 -> DEC
-        | 0x33 -> FTOI
-        | 0x34 -> ITOF
-        | 0x35 -> F_INV
-        | 0x36 -> F_ADD
-        | 0x37 -> F_SUB
-        | 0x38 -> F_MUL
-        | 0x39 -> F_DIV
-        | 0x3a -> F_LT
-        | 0x3b -> F_GT
-        | 0x3c -> F_LTE
-        | 0x3D -> F_GTE
-        | 0x3E -> F_NOTE
-        | 0x3f -> F_EQUALE
-        | 0x40 -> F_PUSH (BR.f32 br)
-        | 0x41 -> S_PUSH (BR.int br)
-        | 0x42 -> S_POP
-        | 0x43 -> S_ADD
-        | 0x44 -> S_ASSIGN
-        | 0x45 -> S_PLUSA
-        | 0x46 -> S_REF
-        (* | Opcode.S_REFREF -> S_REFREF *)
-        | 0x48 -> S_NOTE
-        | 0x49 -> S_EQUALE
-        (* | Opcode.SF_CREATE -> SF_CREATE *)
-        (* | Opcode.SF_CREATEPIXEL -> SF_CREATEPIXEL *)
-        (* | Opcode.SF_CREATEALPHA -> SF_CREATEALPHA *)
-        | 0x4d -> SR_POP
-        | 0x4e -> SR_ASSIGN
-        | 0x4f -> SR_REF (BR.int br)
-        (* | Opcode.SR_REFREF -> SR_REFREF *)
-        | 0x51 -> A_ALLOC
-        | 0x52 -> A_REALLOC
-        | 0x53 -> A_FREE
-        | 0x54 -> A_NUMOF
-        | 0x55 -> A_COPY
-        | 0x56 -> A_FILL
-        | 0x57 -> C_REF
-        | 0x58 -> C_ASSIGN
-        | 0x59 -> MSG (BR.int br)
-        | 0x5a ->
-            let lib = BR.int br in
-            let func = BR.int br in
-            let tid = if Ain.ain.vers > 8 then BR.int br else -1 in
-            let type_ =
-              if tid = -1 then Any else Type.create tid ~struc:0 ~rank:1
-            in
-            CALLHLL (lib, func, type_)
-        | 0x5b -> PUSHSTRUCTPAGE
-        | 0x5c -> CALLMETHOD (BR.int br)
-        | 0x5d -> SH_GLOBALREF (BR.int br)
-        | 0x5e -> SH_LOCALREF (BR.int br)
-        | 0x5f -> SWITCH (BR.int br)
-        | 0x60 -> STRSWITCH (BR.int br)
-        | 0x61 -> FUNC (BR.int br)
-        | 0x62 ->
-            if Ain.ain.vers = 0 then SH_STRUCTREF (BR.int br)
-            else EOF (BR.int br)
-        | 0x63 -> CALLSYS (BR.int br)
-        | 0x64 -> SJUMP
-        | 0x65 -> CALLONJUMP
-        | 0x66 -> SWAP
-        | 0x67 -> SH_STRUCTREF (BR.int br)
-        | 0x68 -> S_LENGTH
-        | 0x69 -> S_LENGTHBYTE
-        | 0x6a -> I_STRING
-        | 0x6b -> CALLFUNC2
-        | 0x6c -> DUP2_X1
-        | 0x6d -> R_ASSIGN
-        | 0x6e -> FT_ASSIGNS
-        | 0x6f -> ASSERT
-        | 0x70 -> S_LT
-        | 0x71 -> S_GT
-        | 0x72 -> S_LTE
-        | 0x73 -> S_GTE
-        | 0x74 -> S_LENGTH2
-        (* | Opcode.S_LENGTHBYTE2 -> S_LENGTHBYTE2 *)
-        | 0x76 ->
-            if Ain.ain.vers > 8 then
-              let struc = BR.int br in
+      {
+        addr;
+        txt =
+          (match BR.u16 br with
+          | 0x00 -> PUSH (BR.i32 br)
+          | 0x01 -> POP
+          | 0x02 -> REF
+          | 0x03 -> REFREF
+          | 0x04 -> PUSHGLOBALPAGE
+          | 0x05 -> PUSHLOCALPAGE
+          | 0x06 -> INV
+          | 0x07 -> NOT
+          | 0x08 -> COMPL
+          | 0x09 -> ADD
+          | 0x0a -> SUB
+          | 0x0b -> MUL
+          | 0x0c -> DIV
+          | 0x0d -> MOD
+          | 0x0e -> AND
+          | 0x0f -> OR
+          | 0x10 -> XOR
+          | 0x11 -> LSHIFT
+          | 0x12 -> RSHIFT
+          | 0x13 -> LT
+          | 0x14 -> GT
+          | 0x15 -> LTE
+          | 0x16 -> GTE
+          | 0x17 -> NOTE
+          | 0x18 -> EQUALE
+          | 0x19 -> ASSIGN
+          | 0x1a -> PLUSA
+          | 0x1b -> MINUSA
+          | 0x1c -> MULA
+          | 0x1d -> DIVA
+          | 0x1e -> MODA
+          | 0x1f -> ANDA
+          | 0x20 -> ORA
+          | 0x21 -> XORA
+          | 0x22 -> LSHIFTA
+          | 0x23 -> RSHIFTA
+          | 0x24 -> F_ASSIGN
+          | 0x25 -> F_PLUSA
+          | 0x26 -> F_MINUSA
+          | 0x27 -> F_MULA
+          | 0x28 -> F_DIVA
+          | 0x29 -> DUP2
+          | 0x2a -> DUP_X2
+          (* | Opcode.CMP -> CMP *)
+          | 0x2c -> JUMP (BR.int br)
+          | 0x2d -> IFZ (BR.int br)
+          | 0x2e -> IFNZ (BR.int br)
+          | 0x2f -> RETURN
+          | 0x30 -> CALLFUNC (BR.int br)
+          | 0x31 -> INC
+          | 0x32 -> DEC
+          | 0x33 -> FTOI
+          | 0x34 -> ITOF
+          | 0x35 -> F_INV
+          | 0x36 -> F_ADD
+          | 0x37 -> F_SUB
+          | 0x38 -> F_MUL
+          | 0x39 -> F_DIV
+          | 0x3a -> F_LT
+          | 0x3b -> F_GT
+          | 0x3c -> F_LTE
+          | 0x3D -> F_GTE
+          | 0x3E -> F_NOTE
+          | 0x3f -> F_EQUALE
+          | 0x40 -> F_PUSH (BR.f32 br)
+          | 0x41 -> S_PUSH (BR.int br)
+          | 0x42 -> S_POP
+          | 0x43 -> S_ADD
+          | 0x44 -> S_ASSIGN
+          | 0x45 -> S_PLUSA
+          | 0x46 -> S_REF
+          (* | Opcode.S_REFREF -> S_REFREF *)
+          | 0x48 -> S_NOTE
+          | 0x49 -> S_EQUALE
+          (* | Opcode.SF_CREATE -> SF_CREATE *)
+          (* | Opcode.SF_CREATEPIXEL -> SF_CREATEPIXEL *)
+          (* | Opcode.SF_CREATEALPHA -> SF_CREATEALPHA *)
+          | 0x4d -> SR_POP
+          | 0x4e -> SR_ASSIGN
+          | 0x4f -> SR_REF (BR.int br)
+          (* | Opcode.SR_REFREF -> SR_REFREF *)
+          | 0x51 -> A_ALLOC
+          | 0x52 -> A_REALLOC
+          | 0x53 -> A_FREE
+          | 0x54 -> A_NUMOF
+          | 0x55 -> A_COPY
+          | 0x56 -> A_FILL
+          | 0x57 -> C_REF
+          | 0x58 -> C_ASSIGN
+          | 0x59 -> MSG (BR.int br)
+          | 0x5a ->
+              let lib = BR.int br in
               let func = BR.int br in
-              NEW (struc, func)
-            else NEW (-1, -1)
-        | 0x77 -> DELETE
-        | 0x78 -> CHECKUDO
-        | 0x79 -> A_REF
-        | 0x7a -> DUP
-        | 0x7b -> DUP_U2
-        | 0x7c -> SP_INC
-        (* | Opcode.SP_DEC -> SP_DEC *)
-        | 0x7e -> ENDFUNC (BR.int br)
-        | 0x7f -> R_EQUALE
-        | 0x80 -> R_NOTE
-        | 0x81 ->
-            let slot = BR.int br in
-            SH_LOCALCREATE (slot, BR.int br)
-        | 0x82 -> SH_LOCALDELETE (BR.int br)
-        | 0x83 -> STOI
-        | 0x84 -> A_PUSHBACK
-        | 0x85 -> A_POPBACK
-        | 0x86 -> S_EMPTY
-        | 0x87 -> A_EMPTY
-        | 0x88 -> A_ERASE
-        | 0x89 -> A_INSERT
-        | 0x8a -> SH_LOCALINC (BR.int br)
-        | 0x8b -> SH_LOCALDEC (BR.int br)
-        | 0x8c ->
-            let slot = BR.int br in
-            SH_LOCALASSIGN (slot, BR.i32 br)
-        | 0x8d -> ITOB
-        | 0x8e -> S_FIND
-        | 0x8f -> S_GETPART
-        | 0x90 -> A_SORT
-        (* | Opcode.S_PUSHBACK -> S_PUSHBACK *)
-        (* | Opcode.S_POPBACK -> S_POPBACK *)
-        | 0x93 -> FTOS
-        | 0x94 -> S_MOD (if Ain.ain.vers > 8 then BR.int br else -1)
-        | 0x95 -> S_PLUSA2
-        | 0x96 -> OBJSWAP (if Ain.ain.vers > 8 then BR.int br else -1)
-        (* | Opcode.S_ERASE -> S_ERASE *)
-        | 0x98 -> SR_REF2 (BR.int br)
-        | 0x99 -> S_ERASE2
-        | 0x9A -> S_PUSHBACK2
-        | 0x9B -> S_POPBACK2
-        | 0x9c -> ITOLI
-        | 0x9d -> LI_ADD
-        | 0x9e -> LI_SUB
-        | 0x9f -> LI_MUL
-        | 0xa0 -> LI_DIV
-        | 0xa1 -> LI_MOD
-        | 0xa2 -> LI_ASSIGN
-        | 0xa3 -> LI_PLUSA
-        | 0xa4 -> LI_MINUSA
-        | 0xa5 -> LI_MULA
-        | 0xa6 -> LI_DIVA
-        | 0xa7 -> LI_MODA
-        | 0xa8 -> LI_ANDA
-        | 0xa9 -> LI_ORA
-        | 0xaa -> LI_XORA
-        | 0xab -> LI_LSHIFTA
-        | 0xac -> LI_RSHIFTA
-        | 0xad -> LI_INC
-        | 0xae -> LI_DEC
-        | 0xaf -> A_FIND
-        | 0xb0 -> A_REVERSE
-        | 0xb1 -> SH_SR_ASSIGN
-        | 0xb2 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_MEM_ASSIGN_LOCAL (memb, local)
-        | 0xb3 -> A_NUMOF_GLOB_1 (BR.int br)
-        | 0xb4 -> A_NUMOF_STRUCT_1 (BR.int br)
-        | 0xb5 ->
-            let slot = BR.int br in
-            SH_MEM_ASSIGN_IMM (slot, BR.i32 br)
-        | 0xb6 -> SH_LOCALREFREF (BR.int br)
-        | 0xb7 ->
-            let local = BR.int br in
-            let imm = BR.i32 br in
-            SH_LOCALASSIGN_SUB_IMM (local, imm)
-        | 0xb8 ->
-            let local = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_LOC_LT_IMM (local, imm, addr)
-        | 0xb9 ->
-            let local = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_LOC_GE_IMM (local, imm, addr)
-        | 0xba ->
-            let local = BR.int br in
-            let memb = BR.int br in
-            SH_LOCREF_ASSIGN_MEM (local, memb)
-        | 0xbb -> PAGE_REF (BR.i32 br)
-        | 0xbc ->
-            let glob = BR.int br in
-            let local = BR.int br in
-            SH_GLOBAL_ASSIGN_LOCAL (glob, local)
-        | 0xbd ->
-            let memb = BR.int br in
-            let imm = BR.i32 br in
-            SH_STRUCTREF_GT_IMM (memb, imm)
-        | 0xbe ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_STRUCT_ASSIGN_LOCALREF_ITOB (memb, local)
-        | 0xbf ->
-            let local = BR.int br in
-            let memb = BR.int br in
-            SH_LOCAL_ASSIGN_STRUCTREF (local, memb)
-        | 0xc0 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            let addr = BR.int br in
-            SH_IF_STRUCTREF_NE_LOCALREF (memb, local, addr)
-        | 0xc1 ->
-            let memb = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_STRUCTREF_GT_IMM (memb, imm, addr)
-        | 0xc2 ->
-            let memb = BR.int br in
-            let func = BR.int br in
-            SH_STRUCTREF_CALLMETHOD_NO_PARAM (memb, func)
-        | 0xc3 ->
-            let memb = BR.int br in
-            let slot = BR.i32 br in
-            SH_STRUCTREF2 (memb, slot)
-        | 0xc4 ->
-            let slot1 = BR.i32 br in
-            let slot2 = BR.i32 br in
-            SH_REF_STRUCTREF2 (slot1, slot2)
-        | 0xc5 ->
-            let memb = BR.int br in
-            let slot1 = BR.i32 br in
-            let slot2 = BR.i32 br in
-            SH_STRUCTREF3 (memb, slot1, slot2)
-        | 0xc6 ->
-            let memb = BR.int br in
-            let slot = BR.i32 br in
-            let func = BR.int br in
-            SH_STRUCTREF2_CALLMETHOD_NO_PARAM (memb, slot, func)
-        | 0xc7 ->
-            let memb = BR.int br in
-            let addr = BR.int br in
-            SH_IF_STRUCTREF_Z (memb, addr)
-        | 0xc8 ->
-            let memb = BR.int br in
-            let addr = BR.int br in
-            SH_IF_STRUCT_A_NOT_EMPTY (memb, addr)
-        | 0xc9 ->
-            let local = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_LOC_GT_IMM (local, imm, addr)
-        | 0xca ->
-            let memb = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_STRUCTREF_NE_IMM (memb, imm, addr)
-        | 0xcb -> THISCALLMETHOD_NOPARAM (BR.int br)
-        | 0xcc ->
-            let local = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_LOC_NE_IMM (local, imm, addr)
-        | 0xcd ->
-            let memb = BR.int br in
-            let imm = BR.i32 br in
-            let addr = BR.int br in
-            SH_IF_STRUCTREF_EQ_IMM (memb, imm, addr)
-        | 0xce ->
-            let var = BR.int br in
-            SH_GLOBAL_ASSIGN_IMM (var, BR.i32 br)
-        | 0xcf ->
-            let local = BR.int br in
-            let slot = BR.i32 br in
-            let imm = BR.i32 br in
-            SH_LOCALSTRUCT_ASSIGN_IMM (local, slot, imm)
-        | 0xd0 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_STRUCT_A_PUSHBACK_LOCAL_STRUCT (memb, local)
-        | 0xd1 ->
-            let glob = BR.int br in
-            let local = BR.int br in
-            SH_GLOBAL_A_PUSHBACK_LOCAL_STRUCT (glob, local)
-        | 0xd2 ->
-            let arrayvar = BR.int br in
-            let structvar = BR.int br in
-            SH_LOCAL_A_PUSHBACK_LOCAL_STRUCT (arrayvar, structvar)
-        | 0xd3 ->
-            let strno = BR.int br in
-            let addr = BR.int br in
-            SH_IF_SREF_NE_STR0 (strno, addr)
-        | 0xd4 -> SH_S_ASSIGN_REF
-        | 0xd5 -> SH_A_FIND_SREF
-        | 0xd6 -> SH_SREF_EMPTY
-        | 0xd7 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_STRUCTSREF_EQ_LOCALSREF (memb, local)
-        | 0xd8 ->
-            let local = BR.int br in
-            let strno = BR.int br in
-            SH_LOCALSREF_EQ_STR0 (local, strno)
-        | 0xd9 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_STRUCTSREF_NE_LOCALSREF (memb, local)
-        | 0xda ->
-            let local = BR.int br in
-            let strno = BR.int br in
-            SH_LOCALSREF_NE_STR0 (local, strno)
-        | 0xdb ->
-            let memb = BR.int br in
-            let struc = BR.int br in
-            SH_STRUCT_SR_REF (memb, struc)
-        | 0xdc -> SH_STRUCT_S_REF (BR.int br)
-        | 0xdd -> S_REF2 (BR.i32 br)
-        | 0xdf -> SH_GLOBAL_S_REF (BR.int br)
-        | 0xe0 -> SH_LOCAL_S_REF (BR.int br)
-        | 0xe1 ->
-            let lvar = BR.int br in
-            let rvar = BR.int br in
-            SH_LOCALREF_SASSIGN_LOCALSREF (lvar, rvar)
-        | 0xe2 ->
-            let arrayvar = BR.int br in
-            let strvar = BR.int br in
-            SH_LOCAL_APUSHBACK_LOCALSREF (arrayvar, strvar)
-        | 0xe3 -> SH_S_ASSIGN_CALLSYS19
-        | 0xe4 -> SH_S_ASSIGN_STR0 (BR.int br)
-        | 0xe5 -> SH_SASSIGN_LOCALSREF (BR.int br)
-        | 0xe6 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_STRUCTREF_SASSIGN_LOCALSREF (memb, local)
-        | 0xe7 -> SH_LOCALSREF_EMPTY (BR.int br)
-        | 0xe8 ->
-            let glob = BR.int br in
-            let local = BR.int br in
-            SH_GLOBAL_APUSHBACK_LOCALSREF (glob, local)
-        | 0xe9 ->
-            let memb = BR.int br in
-            let local = BR.int br in
-            SH_STRUCT_APUSHBACK_LOCALSREF (memb, local)
-        | 0xea -> SH_STRUCTSREF_EMPTY (BR.int br)
-        | 0xeb -> SH_GLOBALSREF_EMPTY (BR.int br)
-        | 0xec -> SH_SASSIGN_STRUCTSREF (BR.int br)
-        | 0xed -> SH_SASSIGN_GLOBALSREF (BR.int br)
-        | 0xee ->
-            let memb = BR.int br in
-            let strno = BR.int br in
-            SH_STRUCTSREF_NE_STR0 (memb, strno)
-        | 0xef ->
-            let glob = BR.int br in
-            let strno = BR.int br in
-            SH_GLOBALSREF_NE_STR0 (glob, strno)
-        | 0xf0 ->
-            let local = BR.int br in
-            let imm1 = BR.i32 br in
-            let imm2 = BR.i32 br in
-            SH_LOC_LT_IMM_OR_LOC_GE_IMM (local, imm1, imm2)
-        | 0xf1 -> A_SORT_MEM
-        | 0xf2 -> DG_ADD
-        | 0xf3 -> DG_SET
-        | 0xf4 ->
-            let dg_type = BR.int br in
-            let addr = BR.int br in
-            DG_CALL (dg_type, addr)
-        | 0xf5 -> DG_NUMOF
-        | 0xf6 -> DG_EXIST
-        | 0xf7 -> DG_ERASE
-        | 0xf8 -> DG_CLEAR
-        | 0xf9 -> DG_COPY
-        | 0xfa -> DG_ASSIGN
-        | 0xfb -> DG_PLUSA
-        | 0xfc -> DG_POP
-        | 0xfd -> DG_NEW_FROM_METHOD
-        | 0xfe -> DG_MINUSA
-        | 0xff -> DG_CALLBEGIN (BR.int br)
-        | 0x100 -> DG_NEW
-        | 0x101 -> DG_STR_TO_METHOD (if Ain.ain.vers > 8 then BR.int br else -1)
-        | 0x103 -> X_GETENV
-        | 0x104 -> X_SET
-        | code ->
-            Printf.failwithf "unknown instruction 0x%x at 0x%x" code
-              (BR.get_pos br - 2)
-              () )
+              let tid = if Ain.ain.vers > 8 then BR.int br else -1 in
+              let type_ =
+                if tid = -1 then Any else Type.create tid ~struc:0 ~rank:1
+              in
+              CALLHLL (lib, func, type_)
+          | 0x5b -> PUSHSTRUCTPAGE
+          | 0x5c -> CALLMETHOD (BR.int br)
+          | 0x5d -> SH_GLOBALREF (BR.int br)
+          | 0x5e -> SH_LOCALREF (BR.int br)
+          | 0x5f -> SWITCH (BR.int br)
+          | 0x60 -> STRSWITCH (BR.int br)
+          | 0x61 -> FUNC (BR.int br)
+          | 0x62 ->
+              if Ain.ain.vers = 0 then SH_STRUCTREF (BR.int br)
+              else EOF (BR.int br)
+          | 0x63 -> CALLSYS (BR.int br)
+          | 0x64 -> SJUMP
+          | 0x65 -> CALLONJUMP
+          | 0x66 -> SWAP
+          | 0x67 -> SH_STRUCTREF (BR.int br)
+          | 0x68 -> S_LENGTH
+          | 0x69 -> S_LENGTHBYTE
+          | 0x6a -> I_STRING
+          | 0x6b -> CALLFUNC2
+          | 0x6c -> DUP2_X1
+          | 0x6d -> R_ASSIGN
+          | 0x6e -> FT_ASSIGNS
+          | 0x6f -> ASSERT
+          | 0x70 -> S_LT
+          | 0x71 -> S_GT
+          | 0x72 -> S_LTE
+          | 0x73 -> S_GTE
+          | 0x74 -> S_LENGTH2
+          (* | Opcode.S_LENGTHBYTE2 -> S_LENGTHBYTE2 *)
+          | 0x76 ->
+              if Ain.ain.vers > 8 then
+                let struc = BR.int br in
+                let func = BR.int br in
+                NEW (struc, func)
+              else NEW (-1, -1)
+          | 0x77 -> DELETE
+          | 0x78 -> CHECKUDO
+          | 0x79 -> A_REF
+          | 0x7a -> DUP
+          | 0x7b -> DUP_U2
+          | 0x7c -> SP_INC
+          (* | Opcode.SP_DEC -> SP_DEC *)
+          | 0x7e -> ENDFUNC (BR.int br)
+          | 0x7f -> R_EQUALE
+          | 0x80 -> R_NOTE
+          | 0x81 ->
+              let slot = BR.int br in
+              SH_LOCALCREATE (slot, BR.int br)
+          | 0x82 -> SH_LOCALDELETE (BR.int br)
+          | 0x83 -> STOI
+          | 0x84 -> A_PUSHBACK
+          | 0x85 -> A_POPBACK
+          | 0x86 -> S_EMPTY
+          | 0x87 -> A_EMPTY
+          | 0x88 -> A_ERASE
+          | 0x89 -> A_INSERT
+          | 0x8a -> SH_LOCALINC (BR.int br)
+          | 0x8b -> SH_LOCALDEC (BR.int br)
+          | 0x8c ->
+              let slot = BR.int br in
+              SH_LOCALASSIGN (slot, BR.i32 br)
+          | 0x8d -> ITOB
+          | 0x8e -> S_FIND
+          | 0x8f -> S_GETPART
+          | 0x90 -> A_SORT
+          (* | Opcode.S_PUSHBACK -> S_PUSHBACK *)
+          (* | Opcode.S_POPBACK -> S_POPBACK *)
+          | 0x93 -> FTOS
+          | 0x94 -> S_MOD (if Ain.ain.vers > 8 then BR.int br else -1)
+          | 0x95 -> S_PLUSA2
+          | 0x96 -> OBJSWAP (if Ain.ain.vers > 8 then BR.int br else -1)
+          (* | Opcode.S_ERASE -> S_ERASE *)
+          | 0x98 -> SR_REF2 (BR.int br)
+          | 0x99 -> S_ERASE2
+          | 0x9A -> S_PUSHBACK2
+          | 0x9B -> S_POPBACK2
+          | 0x9c -> ITOLI
+          | 0x9d -> LI_ADD
+          | 0x9e -> LI_SUB
+          | 0x9f -> LI_MUL
+          | 0xa0 -> LI_DIV
+          | 0xa1 -> LI_MOD
+          | 0xa2 -> LI_ASSIGN
+          | 0xa3 -> LI_PLUSA
+          | 0xa4 -> LI_MINUSA
+          | 0xa5 -> LI_MULA
+          | 0xa6 -> LI_DIVA
+          | 0xa7 -> LI_MODA
+          | 0xa8 -> LI_ANDA
+          | 0xa9 -> LI_ORA
+          | 0xaa -> LI_XORA
+          | 0xab -> LI_LSHIFTA
+          | 0xac -> LI_RSHIFTA
+          | 0xad -> LI_INC
+          | 0xae -> LI_DEC
+          | 0xaf -> A_FIND
+          | 0xb0 -> A_REVERSE
+          | 0xb1 -> SH_SR_ASSIGN
+          | 0xb2 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_MEM_ASSIGN_LOCAL (memb, local)
+          | 0xb3 -> A_NUMOF_GLOB_1 (BR.int br)
+          | 0xb4 -> A_NUMOF_STRUCT_1 (BR.int br)
+          | 0xb5 ->
+              let slot = BR.int br in
+              SH_MEM_ASSIGN_IMM (slot, BR.i32 br)
+          | 0xb6 -> SH_LOCALREFREF (BR.int br)
+          | 0xb7 ->
+              let local = BR.int br in
+              let imm = BR.i32 br in
+              SH_LOCALASSIGN_SUB_IMM (local, imm)
+          | 0xb8 ->
+              let local = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_LOC_LT_IMM (local, imm, addr)
+          | 0xb9 ->
+              let local = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_LOC_GE_IMM (local, imm, addr)
+          | 0xba ->
+              let local = BR.int br in
+              let memb = BR.int br in
+              SH_LOCREF_ASSIGN_MEM (local, memb)
+          | 0xbb -> PAGE_REF (BR.i32 br)
+          | 0xbc ->
+              let glob = BR.int br in
+              let local = BR.int br in
+              SH_GLOBAL_ASSIGN_LOCAL (glob, local)
+          | 0xbd ->
+              let memb = BR.int br in
+              let imm = BR.i32 br in
+              SH_STRUCTREF_GT_IMM (memb, imm)
+          | 0xbe ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_STRUCT_ASSIGN_LOCALREF_ITOB (memb, local)
+          | 0xbf ->
+              let local = BR.int br in
+              let memb = BR.int br in
+              SH_LOCAL_ASSIGN_STRUCTREF (local, memb)
+          | 0xc0 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              let addr = BR.int br in
+              SH_IF_STRUCTREF_NE_LOCALREF (memb, local, addr)
+          | 0xc1 ->
+              let memb = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_STRUCTREF_GT_IMM (memb, imm, addr)
+          | 0xc2 ->
+              let memb = BR.int br in
+              let func = BR.int br in
+              SH_STRUCTREF_CALLMETHOD_NO_PARAM (memb, func)
+          | 0xc3 ->
+              let memb = BR.int br in
+              let slot = BR.i32 br in
+              SH_STRUCTREF2 (memb, slot)
+          | 0xc4 ->
+              let slot1 = BR.i32 br in
+              let slot2 = BR.i32 br in
+              SH_REF_STRUCTREF2 (slot1, slot2)
+          | 0xc5 ->
+              let memb = BR.int br in
+              let slot1 = BR.i32 br in
+              let slot2 = BR.i32 br in
+              SH_STRUCTREF3 (memb, slot1, slot2)
+          | 0xc6 ->
+              let memb = BR.int br in
+              let slot = BR.i32 br in
+              let func = BR.int br in
+              SH_STRUCTREF2_CALLMETHOD_NO_PARAM (memb, slot, func)
+          | 0xc7 ->
+              let memb = BR.int br in
+              let addr = BR.int br in
+              SH_IF_STRUCTREF_Z (memb, addr)
+          | 0xc8 ->
+              let memb = BR.int br in
+              let addr = BR.int br in
+              SH_IF_STRUCT_A_NOT_EMPTY (memb, addr)
+          | 0xc9 ->
+              let local = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_LOC_GT_IMM (local, imm, addr)
+          | 0xca ->
+              let memb = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_STRUCTREF_NE_IMM (memb, imm, addr)
+          | 0xcb -> THISCALLMETHOD_NOPARAM (BR.int br)
+          | 0xcc ->
+              let local = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_LOC_NE_IMM (local, imm, addr)
+          | 0xcd ->
+              let memb = BR.int br in
+              let imm = BR.i32 br in
+              let addr = BR.int br in
+              SH_IF_STRUCTREF_EQ_IMM (memb, imm, addr)
+          | 0xce ->
+              let var = BR.int br in
+              SH_GLOBAL_ASSIGN_IMM (var, BR.i32 br)
+          | 0xcf ->
+              let local = BR.int br in
+              let slot = BR.i32 br in
+              let imm = BR.i32 br in
+              SH_LOCALSTRUCT_ASSIGN_IMM (local, slot, imm)
+          | 0xd0 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_STRUCT_A_PUSHBACK_LOCAL_STRUCT (memb, local)
+          | 0xd1 ->
+              let glob = BR.int br in
+              let local = BR.int br in
+              SH_GLOBAL_A_PUSHBACK_LOCAL_STRUCT (glob, local)
+          | 0xd2 ->
+              let arrayvar = BR.int br in
+              let structvar = BR.int br in
+              SH_LOCAL_A_PUSHBACK_LOCAL_STRUCT (arrayvar, structvar)
+          | 0xd3 ->
+              let strno = BR.int br in
+              let addr = BR.int br in
+              SH_IF_SREF_NE_STR0 (strno, addr)
+          | 0xd4 -> SH_S_ASSIGN_REF
+          | 0xd5 -> SH_A_FIND_SREF
+          | 0xd6 -> SH_SREF_EMPTY
+          | 0xd7 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_STRUCTSREF_EQ_LOCALSREF (memb, local)
+          | 0xd8 ->
+              let local = BR.int br in
+              let strno = BR.int br in
+              SH_LOCALSREF_EQ_STR0 (local, strno)
+          | 0xd9 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_STRUCTSREF_NE_LOCALSREF (memb, local)
+          | 0xda ->
+              let local = BR.int br in
+              let strno = BR.int br in
+              SH_LOCALSREF_NE_STR0 (local, strno)
+          | 0xdb ->
+              let memb = BR.int br in
+              let struc = BR.int br in
+              SH_STRUCT_SR_REF (memb, struc)
+          | 0xdc -> SH_STRUCT_S_REF (BR.int br)
+          | 0xdd -> S_REF2 (BR.i32 br)
+          | 0xdf -> SH_GLOBAL_S_REF (BR.int br)
+          | 0xe0 -> SH_LOCAL_S_REF (BR.int br)
+          | 0xe1 ->
+              let lvar = BR.int br in
+              let rvar = BR.int br in
+              SH_LOCALREF_SASSIGN_LOCALSREF (lvar, rvar)
+          | 0xe2 ->
+              let arrayvar = BR.int br in
+              let strvar = BR.int br in
+              SH_LOCAL_APUSHBACK_LOCALSREF (arrayvar, strvar)
+          | 0xe3 -> SH_S_ASSIGN_CALLSYS19
+          | 0xe4 -> SH_S_ASSIGN_STR0 (BR.int br)
+          | 0xe5 -> SH_SASSIGN_LOCALSREF (BR.int br)
+          | 0xe6 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_STRUCTREF_SASSIGN_LOCALSREF (memb, local)
+          | 0xe7 -> SH_LOCALSREF_EMPTY (BR.int br)
+          | 0xe8 ->
+              let glob = BR.int br in
+              let local = BR.int br in
+              SH_GLOBAL_APUSHBACK_LOCALSREF (glob, local)
+          | 0xe9 ->
+              let memb = BR.int br in
+              let local = BR.int br in
+              SH_STRUCT_APUSHBACK_LOCALSREF (memb, local)
+          | 0xea -> SH_STRUCTSREF_EMPTY (BR.int br)
+          | 0xeb -> SH_GLOBALSREF_EMPTY (BR.int br)
+          | 0xec -> SH_SASSIGN_STRUCTSREF (BR.int br)
+          | 0xed -> SH_SASSIGN_GLOBALSREF (BR.int br)
+          | 0xee ->
+              let memb = BR.int br in
+              let strno = BR.int br in
+              SH_STRUCTSREF_NE_STR0 (memb, strno)
+          | 0xef ->
+              let glob = BR.int br in
+              let strno = BR.int br in
+              SH_GLOBALSREF_NE_STR0 (glob, strno)
+          | 0xf0 ->
+              let local = BR.int br in
+              let imm1 = BR.i32 br in
+              let imm2 = BR.i32 br in
+              SH_LOC_LT_IMM_OR_LOC_GE_IMM (local, imm1, imm2)
+          | 0xf1 -> A_SORT_MEM
+          | 0xf2 -> DG_ADD
+          | 0xf3 -> DG_SET
+          | 0xf4 ->
+              let dg_type = BR.int br in
+              let addr = BR.int br in
+              DG_CALL (dg_type, addr)
+          | 0xf5 -> DG_NUMOF
+          | 0xf6 -> DG_EXIST
+          | 0xf7 -> DG_ERASE
+          | 0xf8 -> DG_CLEAR
+          | 0xf9 -> DG_COPY
+          | 0xfa -> DG_ASSIGN
+          | 0xfb -> DG_PLUSA
+          | 0xfc -> DG_POP
+          | 0xfd -> DG_NEW_FROM_METHOD
+          | 0xfe -> DG_MINUSA
+          | 0xff -> DG_CALLBEGIN (BR.int br)
+          | 0x100 -> DG_NEW
+          | 0x101 ->
+              DG_STR_TO_METHOD (if Ain.ain.vers > 8 then BR.int br else -1)
+          | 0x103 -> X_GETENV
+          | 0x104 -> X_SET
+          | code ->
+              Printf.failwithf "unknown instruction 0x%x at 0x%x" code
+                (BR.get_pos br - 2)
+                ());
+      }
   done;
   List.rev !is
 
 let detect_ifthen_optimization code =
   let trivial_jumps = ref 0 and total_jumps = ref 0 in
   List.iter code ~f:(function
-    | addr, (JUMP target as op) ->
+    | { addr; txt = JUMP target as op } ->
         Int.incr total_jumps;
         if addr + width op = target then Int.incr trivial_jumps
     | _ -> ());

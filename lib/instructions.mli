@@ -15,6 +15,7 @@
  *)
 
 open Base
+open Loc
 
 type instruction =
   | PUSH of int32
@@ -302,8 +303,8 @@ type instruction =
 [@@deriving show { with_path = false }]
 
 val width : instruction -> int
-val decode : bytes -> (int * instruction) list
-val detect_ifthen_optimization : (int * instruction) list -> bool
+val decode : bytes -> instruction loc list
+val detect_ifthen_optimization : instruction loc list -> bool
 val builtin_method_name : instruction -> string
 
 type syscall = {
