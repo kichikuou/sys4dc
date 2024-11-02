@@ -16,10 +16,14 @@
 
 open Base
 open Ast
+open Loc
 
-type ast_transform = statement -> statement
+type ast_transform = statement loc -> statement loc
 
-let block = function [ stmt ] -> stmt | stmts -> Block stmts
+let block = function
+  | [] -> { txt = Block []; addr = -1 }
+  | [ stmt ] -> stmt
+  | stmts -> { txt = Block stmts; addr = (List.last_exn stmts).addr }
 
 let rename_labels stmt =
   let targets = ref [] in
@@ -32,70 +36,96 @@ let rename_labels stmt =
     |> List.mapi ~f:(fun i addr -> (addr, i))
     |> Hashtbl.of_alist_exn (module Int)
   in
-  let rec update = function
-    | Label (Address addr) -> (
-        match Hashtbl.find targets addr with
-        | Some i -> Label (Address i)
-        | None -> Block [] (* remove unused label *))
-    | IfElse (e, stmt1, stmt2) -> IfElse (e, update stmt1, update stmt2)
-    | While (cond, body) -> While (cond, update body)
-    | DoWhile (body, cond) -> DoWhile (update body, cond)
-    | For (init, cond, inc, body) -> For (init, cond, inc, update body)
-    | Block stmts ->
-        List.map stmts ~f:update
-        |> List.filter ~f:(function Block [] -> false | _ -> true)
-        |> block
-    | Switch (id, e, stmt) -> Switch (id, e, update stmt)
-    | Goto (addr, x) -> Goto (Hashtbl.find_exn targets addr, x)
-    | stmt -> stmt
+  let rec update { txt; addr } =
+    let txt' =
+      match txt with
+      | Label (Address addr) -> (
+          match Hashtbl.find targets addr with
+          | Some i -> Label (Address i)
+          | None -> Block [] (* remove unused label *))
+      | IfElse (e, stmt1, stmt2) -> IfElse (e, update stmt1, update stmt2)
+      | While (cond, body) -> While (cond, update body)
+      | DoWhile (body, cond) -> DoWhile (update body, cond)
+      | For (init, cond, inc, body) -> For (init, cond, inc, update body)
+      | Block stmts ->
+          (List.map stmts ~f:update
+          |> List.filter ~f:(function
+               | { txt = Block []; _ } -> false
+               | _ -> true)
+          |> block)
+            .txt
+      | Switch (id, e, stmt) -> Switch (id, e, update stmt)
+      | Goto (addr, x) -> Goto (Hashtbl.find_exn targets addr, x)
+      | stmt -> stmt
+    in
+    { txt = txt'; addr }
   in
   update stmt
 
 let recover_loop_initializer stmt =
   let rec reduce left = function
     | [] -> left
-    | s1 :: (For (None, None, None, _) as s2) :: right ->
+    | s1 :: ({ txt = For (None, None, None, _); _ } as s2) :: right ->
         (* Do not transform loops where both cond and inc are empty. *)
         reduce (s2 :: s1 :: left) right
-    | Expression (AssignOp _ as init) :: For (None, cond, inc, body) :: right ->
-        reduce (For (Some init, cond, inc, body) :: left) right
-    | VarDecl (var, Some (inst, expr)) :: For (None, cond, inc, body) :: right
-      ->
+    | { txt = Expression (AssignOp _ as init); addr }
+      :: { txt = For (None, cond, inc, body); _ }
+      :: right ->
+        reduce ({ txt = For (Some init, cond, inc, body); addr } :: left) right
+    | { txt = VarDecl (var, Some (inst, expr)); addr }
+      :: { txt = For (None, cond, inc, body); _ }
+      :: right ->
         reduce
-          (For
-             ( Some (AssignOp (inst, PageRef (LocalPage, var), expr)),
-               cond,
-               inc,
-               body )
-          :: VarDecl (var, None)
+          ({
+             txt =
+               For
+                 ( Some (AssignOp (inst, PageRef (LocalPage, var), expr)),
+                   cond,
+                   inc,
+                   body );
+             addr;
+           }
+          :: { txt = VarDecl (var, None); addr }
           :: left)
           right
     | stmt :: right -> reduce (stmt :: left) right
   in
   map_block stmt ~f:(fun stmts -> reduce [] (List.rev stmts))
 
-let remove_redundant_return = function
-  | Block (Return None :: stmts) -> Block stmts
-  | Block (Return _ :: (Return _ :: _ as stmts)) -> Block stmts
-  | stmt -> stmt
+let remove_redundant_return { txt; addr } =
+  {
+    txt =
+      (match txt with
+      | Block ({ txt = Return None; _ } :: stmts) -> Block stmts
+      | Block ({ txt = Return _; _ } :: ({ txt = Return _; _ } :: _ as stmts))
+        ->
+          Block stmts
+      | stmt -> stmt);
+    addr;
+  }
 
 let remove_implicit_array_free stmt =
   let process_block stmts =
     let vars =
       List.rev_filter_map stmts ~f:(function
-        | VarDecl (({ type_ = Array _; _ } as var), _) -> Some var
+        | { txt = VarDecl (({ type_ = Array _; _ } as var), _); _ } -> Some var
         | _ -> None)
     in
     let rec remove_free vars stmts =
       match (vars, stmts) with
       | [], _ -> stmts
       | ( var :: vars,
-          Expression (Call (Builtin (A_FREE, PageRef (LocalPage, v)), []))
+          {
+            txt =
+              Expression (Call (Builtin (A_FREE, PageRef (LocalPage, v)), []));
+            _;
+          }
           :: stmts )
         when phys_equal var v ->
           remove_free vars stmts
       (* For switch statements, free is inserted before break *)
-      | _, Break :: stmts -> Break :: remove_free vars stmts
+      | _, ({ txt = Break; _ } as stmt) :: stmts ->
+          stmt :: remove_free vars stmts
       | _ ->
           Stdio.eprintf "remove_implicit_array_free: no Array.free for %s\n"
             ([%show: Ain.Variable.t list] vars);
@@ -104,16 +134,17 @@ let remove_implicit_array_free stmt =
     remove_free vars stmts
   in
   match stmt with
-  | Block stmts -> Block (List.map stmts ~f:(map_block ~f:process_block))
+  | { txt = Block stmts; addr } ->
+      { txt = Block (List.map stmts ~f:(map_block ~f:process_block)); addr }
   | stmt -> map_block stmt ~f:process_block
 
 let remove_array_initializer_call = function
-  | Block stmts -> (
+  | { txt = Block stmts; addr } -> (
       match List.rev stmts with
-      | Expression (Call (Method (Page StructPage, f), [])) :: rest
+      | { txt = Expression (Call (Method (Page StructPage, f), [])); _ } :: rest
         when String.is_suffix f.name ~suffix:"@2" ->
-          Block (List.rev rest)
-      | _ -> Block stmts)
+          { txt = Block (List.rev rest); addr }
+      | _ -> { txt = Block stmts; addr })
   | stmt -> stmt
 
 let remove_dummy_variable_assignment stmt =
@@ -132,14 +163,17 @@ let remove_dummy_variable_assignment stmt =
 let remove_generated_lockpeek stmt =
   let rec reduce left = function
     | [] -> left
-    | (Expression (Call (SysCall 4, [])) as unlockpeek) :: right -> (
+    | ({ txt = Expression (Call (SysCall 4, [])); _ } as unlockpeek) :: right
+      -> (
         match left with
-        | (( VarDecl ({ type_ = Ref _; _ }, Some _)
-           | Expression (AssignOp (PSEUDO_REF_ASSIGN, _, _)) ) as stmt)
-          :: Expression (Call (SysCall 3, []))
+        | (( { txt = VarDecl ({ type_ = Ref _; _ }, Some _); _ }
+           | { txt = Expression (AssignOp (PSEUDO_REF_ASSIGN, _, _)); _ } ) as
+           stmt)
+          :: { txt = Expression (Call (SysCall 3, [])); _ }
           :: left ->
             reduce (stmt :: left) right
-        | Expression (Call (SysCall 3, [])) :: left -> reduce left right
+        | { txt = Expression (Call (SysCall 3, [])); _ } :: left ->
+            reduce left right
         | _ -> reduce (unlockpeek :: left) right)
     | stmt :: right -> reduce (stmt :: left) right
   in
@@ -153,8 +187,10 @@ let remove_vardecl_default_rhs stmt =
 let fold_newline_func_to_msg stmt =
   let rec reduce left = function
     | [] -> left
-    | Msg (m, None) :: Expression (Call _ as e) :: right ->
-        reduce (Msg (m, Some e) :: left) right
+    | { txt = Msg (m, None); addr }
+      :: { txt = Expression (Call _ as e); _ }
+      :: right ->
+        reduce ({ txt = Msg (m, Some e); addr } :: left) right
     | stmt :: right -> reduce (stmt :: left) right
   in
   map_block stmt ~f:(fun stmts -> reduce [] (List.rev stmts))

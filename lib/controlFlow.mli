@@ -14,4 +14,6 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
-val analyze : BasicBlock.t list -> Ast.statement
+open Loc
+
+val analyze : BasicBlock.t list -> Ast.statement loc

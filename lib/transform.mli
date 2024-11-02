@@ -15,8 +15,9 @@
  *)
 
 open Ast
+open Loc
 
-type ast_transform = statement -> statement
+type ast_transform = statement loc -> statement loc
 
 (* Assigns sequential numbers to labels, and removes unnecessary labels. *)
 val rename_labels : ast_transform

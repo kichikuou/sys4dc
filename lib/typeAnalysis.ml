@@ -15,6 +15,7 @@
  *)
 
 open Base
+open Loc
 open Type
 open Ast
 
@@ -336,53 +337,58 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     | None -> None
     | Some e -> Some (fst (analyze_expr expected e))
   in
-  let rec analyze_statement = function
-    | VarDecl (var, None) -> VarDecl (var, None)
-    | VarDecl (var, Some (insn, expr)) ->
-        let expr', _ = analyze_expr var.type_ expr in
-        let expr' = remove_cast var.type_ expr' in
-        (match (var.type_, insn) with
-        | FuncType ftv, PSEUDO_FT_ASSIGNS ft_id ->
-            Type.TypeVar.set_id ftv ft_id
-              (Ain.FuncType.to_type Ain.ain.fnct.(ft_id))
-        | _ -> ());
-        VarDecl (var, Some (insn, expr'))
-    | Expression expr ->
-        let expr', _ = analyze_expr Any expr in
-        Expression expr'
-    | Label _ as stmt -> stmt
-    | Block stmts -> Block (List.map stmts ~f:analyze_statement)
-    | IfElse (cond, stmt1, stmt2) ->
-        let cond', _ = analyze_expr Bool cond in
-        IfElse (cond', analyze_statement stmt1, analyze_statement stmt2)
-    | While (cond, stmt) ->
-        let cond', _ = analyze_expr Bool cond in
-        While (cond', analyze_statement stmt)
-    | DoWhile (stmt, cond) ->
-        let cond', _ = analyze_expr Bool cond in
-        DoWhile (analyze_statement stmt, cond')
-    | Switch (id, expr, stmt) ->
-        let expr', _ = analyze_expr Any expr in
-        Switch (id, expr', analyze_statement stmt)
-    | For (init, cond, inc, body) ->
-        For
-          ( analyze_expr_opt Any init,
-            analyze_expr_opt Bool cond,
-            analyze_expr_opt Any inc,
-            analyze_statement body )
-    | Break -> Break
-    | Continue -> Continue
-    | Goto _ as stmt -> stmt
-    | Return None as s -> s
-    | Return (Some expr) ->
-        let expr', t = analyze_expr func.return_type expr in
-        unify_if_functype t func.return_type;
-        let expr' = remove_cast func.return_type expr' in
-        Return (Some expr')
-    | ScenarioJump _ as stmt -> stmt
-    | Msg _ as stmt -> stmt
-    | Assert expr ->
-        let expr', _ = analyze_expr Bool expr in
-        Assert expr'
+  let rec analyze_statement { txt = stmt; addr } =
+    {
+      txt =
+        (match stmt with
+        | VarDecl (var, None) -> VarDecl (var, None)
+        | VarDecl (var, Some (insn, expr)) ->
+            let expr', _ = analyze_expr var.type_ expr in
+            let expr' = remove_cast var.type_ expr' in
+            (match (var.type_, insn) with
+            | FuncType ftv, PSEUDO_FT_ASSIGNS ft_id ->
+                Type.TypeVar.set_id ftv ft_id
+                  (Ain.FuncType.to_type Ain.ain.fnct.(ft_id))
+            | _ -> ());
+            VarDecl (var, Some (insn, expr'))
+        | Expression expr ->
+            let expr', _ = analyze_expr Any expr in
+            Expression expr'
+        | Label _ as stmt -> stmt
+        | Block stmts -> Block (List.map stmts ~f:analyze_statement)
+        | IfElse (cond, stmt1, stmt2) ->
+            let cond', _ = analyze_expr Bool cond in
+            IfElse (cond', analyze_statement stmt1, analyze_statement stmt2)
+        | While (cond, stmt) ->
+            let cond', _ = analyze_expr Bool cond in
+            While (cond', analyze_statement stmt)
+        | DoWhile (stmt, cond) ->
+            let cond', _ = analyze_expr Bool cond in
+            DoWhile (analyze_statement stmt, cond')
+        | Switch (id, expr, stmt) ->
+            let expr', _ = analyze_expr Any expr in
+            Switch (id, expr', analyze_statement stmt)
+        | For (init, cond, inc, body) ->
+            For
+              ( analyze_expr_opt Any init,
+                analyze_expr_opt Bool cond,
+                analyze_expr_opt Any inc,
+                analyze_statement body )
+        | Break -> Break
+        | Continue -> Continue
+        | Goto _ as stmt -> stmt
+        | Return None as s -> s
+        | Return (Some expr) ->
+            let expr', t = analyze_expr func.return_type expr in
+            unify_if_functype t func.return_type;
+            let expr' = remove_cast func.return_type expr' in
+            Return (Some expr')
+        | ScenarioJump _ as stmt -> stmt
+        | Msg _ as stmt -> stmt
+        | Assert expr ->
+            let expr', _ = analyze_expr Bool expr in
+            Assert expr');
+      addr;
+    }
   in
   analyze_statement stmt

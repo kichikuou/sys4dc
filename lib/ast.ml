@@ -15,6 +15,7 @@
  *)
 
 open Base
+open Loc
 
 type page_value = GlobalPage | LocalPage | StructPage | ParentPage
 [@@deriving show { with_path = false }]
@@ -82,16 +83,17 @@ type statement =
   | VarDecl of Ain.Variable.t * (Instructions.instruction * expr) option
   | Expression of expr
   | Label of label
-  | Block of statement list (* in reversed order *)
-  | IfElse of expr * statement * statement (* (cond, thenBlock, elseBlock) *)
-  | While of expr * statement (* (cond, block) *)
-  | DoWhile of statement * expr (* (block, cond) *)
-  | Switch of int * expr * statement (* (switch_id, expr, body) *)
+  | Block of statement loc list (* in reversed order *)
+  | IfElse of
+      expr * statement loc * statement loc (* (cond, thenBlock, elseBlock) *)
+  | While of expr * statement loc (* (cond, block) *)
+  | DoWhile of statement loc * expr (* (block, cond) *)
+  | Switch of int * expr * statement loc (* (switch_id, expr, body) *)
   | For of
       expr option
       * expr option
       * expr option
-      * statement (* init, cond, inc, body *)
+      * statement loc (* init, cond, inc, body *)
   | Break
   | Continue
   | Goto of int * int (* target, address_after_JUMP *)
@@ -101,30 +103,34 @@ type statement =
   | Assert of expr
 [@@deriving show { with_path = false }]
 
-let rec map_stmt stmt ~f =
-  match stmt with
-  | VarDecl _ as stmt -> f stmt
-  | Expression _ as stmt -> f stmt
-  | Label _ as stmt -> f stmt
-  | IfElse (e, stmt1, stmt2) ->
-      let stmt1 = map_stmt stmt1 ~f in
-      let stmt2 = map_stmt stmt2 ~f in
-      IfElse (e, stmt1, stmt2) |> f
-  | While (cond, body) -> While (cond, map_stmt body ~f) |> f
-  | DoWhile (body, cond) -> DoWhile (map_stmt body ~f, cond) |> f
-  | For (init, cond, inc, body) -> For (init, cond, inc, map_stmt body ~f) |> f
-  | Break as stmt -> f stmt
-  | Continue as stmt -> f stmt
-  | Goto _ as stmt -> f stmt
-  | Return _ as stmt -> f stmt
-  | ScenarioJump _ as stmt -> f stmt
-  | Msg _ as stmt -> f stmt
-  | Assert _ as stmt -> f stmt
-  | Block stmts -> Block (List.rev_map (List.rev stmts) ~f:(map_stmt ~f)) |> f
-  | Switch (id, e, stmt) -> Switch (id, e, map_stmt stmt ~f) |> f
+let rec map_stmt { txt = stmt; addr } ~f =
+  let stmt' =
+    match stmt with
+    | VarDecl _ as stmt -> f stmt
+    | Expression _ as stmt -> f stmt
+    | Label _ as stmt -> f stmt
+    | IfElse (e, stmt1, stmt2) ->
+        let stmt1 = map_stmt stmt1 ~f in
+        let stmt2 = map_stmt stmt2 ~f in
+        IfElse (e, stmt1, stmt2) |> f
+    | While (cond, body) -> While (cond, map_stmt body ~f) |> f
+    | DoWhile (body, cond) -> DoWhile (map_stmt body ~f, cond) |> f
+    | For (init, cond, inc, body) ->
+        For (init, cond, inc, map_stmt body ~f) |> f
+    | Break as stmt -> f stmt
+    | Continue as stmt -> f stmt
+    | Goto _ as stmt -> f stmt
+    | Return _ as stmt -> f stmt
+    | ScenarioJump _ as stmt -> f stmt
+    | Msg _ as stmt -> f stmt
+    | Assert _ as stmt -> f stmt
+    | Block stmts -> Block (List.rev_map (List.rev stmts) ~f:(map_stmt ~f)) |> f
+    | Switch (id, e, stmt) -> Switch (id, e, map_stmt stmt ~f) |> f
+  in
+  { txt = stmt'; addr }
 
 let walk_statement stmt ~f =
-  let rec walk stmt =
+  let rec walk { txt = stmt; _ } =
     f stmt;
     match stmt with
     | VarDecl _ -> ()
@@ -148,27 +154,30 @@ let walk_statement stmt ~f =
   in
   walk stmt
 
-let rec map_block stmt ~f =
-  match stmt with
-  | VarDecl _ as stmt -> stmt
-  | Expression _ as stmt -> stmt
-  | Label _ as stmt -> stmt
-  | IfElse (e, stmt1, stmt2) ->
-      let stmt1 = map_block stmt1 ~f in
-      let stmt2 = map_block stmt2 ~f in
-      IfElse (e, stmt1, stmt2)
-  | While (cond, body) -> While (cond, map_block body ~f)
-  | DoWhile (body, cond) -> DoWhile (map_block body ~f, cond)
-  | For (init, cond, inc, body) -> For (init, cond, inc, map_block body ~f)
-  | Break as stmt -> stmt
-  | Continue as stmt -> stmt
-  | Goto _ as stmt -> stmt
-  | Return _ as stmt -> stmt
-  | ScenarioJump _ as stmt -> stmt
-  | Msg _ as stmt -> stmt
-  | Assert _ as stmt -> stmt
-  | Block stmts -> Block (f (List.map stmts ~f:(map_block ~f)))
-  | Switch (id, e, stmt) -> Switch (id, e, map_block stmt ~f)
+let rec map_block { txt = stmt; addr } ~f =
+  let stmt' =
+    match stmt with
+    | VarDecl _ as stmt -> stmt
+    | Expression _ as stmt -> stmt
+    | Label _ as stmt -> stmt
+    | IfElse (e, stmt1, stmt2) ->
+        let stmt1 = map_block stmt1 ~f in
+        let stmt2 = map_block stmt2 ~f in
+        IfElse (e, stmt1, stmt2)
+    | While (cond, body) -> While (cond, map_block body ~f)
+    | DoWhile (body, cond) -> DoWhile (map_block body ~f, cond)
+    | For (init, cond, inc, body) -> For (init, cond, inc, map_block body ~f)
+    | Break as stmt -> stmt
+    | Continue as stmt -> stmt
+    | Goto _ as stmt -> stmt
+    | Return _ as stmt -> stmt
+    | ScenarioJump _ as stmt -> stmt
+    | Msg _ as stmt -> stmt
+    | Assert _ as stmt -> stmt
+    | Block stmts -> Block (f (List.map stmts ~f:(map_block ~f)))
+    | Switch (id, e, stmt) -> Switch (id, e, map_block stmt ~f)
+  in
+  { txt = stmt'; addr }
 
 let map_expr stmt ~f =
   let rec rec_expr = function
@@ -218,32 +227,36 @@ let map_expr stmt ~f =
     | Builtin (inst, lval) -> Builtin (inst, rec_lvalue lval)
     | Builtin2 (inst, expr) -> Builtin2 (inst, rec_expr expr)
   in
-  let rec rec_stmt = function
-    | VarDecl (_, None) as stmt -> stmt
-    | VarDecl (v, Some (insn, e)) -> VarDecl (v, Some (insn, rec_expr e))
-    | Expression e -> Expression (rec_expr e)
-    | Label _ as stmt -> stmt
-    | IfElse (e, stmt1, stmt2) ->
-        IfElse (rec_expr e, rec_stmt stmt1, rec_stmt stmt2)
-    | While (cond, body) -> While (rec_expr cond, rec_stmt body)
-    | DoWhile (body, cond) -> DoWhile (rec_stmt body, rec_expr cond)
-    | For (init, cond, inc, body) ->
-        For
-          ( Option.map ~f:rec_expr init,
-            Option.map ~f:rec_expr cond,
-            Option.map ~f:rec_expr inc,
-            rec_stmt body )
-    | Break as stmt -> stmt
-    | Continue as stmt -> stmt
-    | Goto _ as stmt -> stmt
-    | Return None as stmt -> stmt
-    | Return (Some e) -> Return (Some (rec_expr e))
-    | ScenarioJump _ as stmt -> stmt
-    | Msg (_, None) as stmt -> stmt
-    | Msg (m, Some e) -> Msg (m, Some (rec_expr e))
-    | Assert e -> Assert (rec_expr e)
-    | Block stmts -> Block (List.map stmts ~f:rec_stmt)
-    | Switch (id, e, stmt) -> Switch (id, rec_expr e, rec_stmt stmt)
+  let rec rec_stmt { txt = stmt; addr } =
+    let stmt' =
+      match stmt with
+      | VarDecl (_, None) as stmt -> stmt
+      | VarDecl (v, Some (insn, e)) -> VarDecl (v, Some (insn, rec_expr e))
+      | Expression e -> Expression (rec_expr e)
+      | Label _ as stmt -> stmt
+      | IfElse (e, stmt1, stmt2) ->
+          IfElse (rec_expr e, rec_stmt stmt1, rec_stmt stmt2)
+      | While (cond, body) -> While (rec_expr cond, rec_stmt body)
+      | DoWhile (body, cond) -> DoWhile (rec_stmt body, rec_expr cond)
+      | For (init, cond, inc, body) ->
+          For
+            ( Option.map ~f:rec_expr init,
+              Option.map ~f:rec_expr cond,
+              Option.map ~f:rec_expr inc,
+              rec_stmt body )
+      | Break as stmt -> stmt
+      | Continue as stmt -> stmt
+      | Goto _ as stmt -> stmt
+      | Return None as stmt -> stmt
+      | Return (Some e) -> Return (Some (rec_expr e))
+      | ScenarioJump _ as stmt -> stmt
+      | Msg (_, None) as stmt -> stmt
+      | Msg (m, Some e) -> Msg (m, Some (rec_expr e))
+      | Assert e -> Assert (rec_expr e)
+      | Block stmts -> Block (List.map stmts ~f:rec_stmt)
+      | Switch (id, e, stmt) -> Switch (id, rec_expr e, rec_stmt stmt)
+    in
+    { txt = stmt'; addr }
   in
   rec_stmt stmt
 
@@ -314,7 +327,7 @@ let walk ?(stmt_cb = fun _ -> ()) ?(expr_cb = fun _ -> ())
     | Builtin (_, lval) -> rec_lvalue lval
     | Builtin2 (_, expr) -> rec_expr expr
   in
-  let rec rec_stmt stmt =
+  let rec rec_stmt { txt = stmt; _ } =
     stmt_cb stmt;
     match stmt with
     | VarDecl (_, None) -> ()

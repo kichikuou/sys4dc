@@ -15,6 +15,10 @@
  *)
 
 open Base
+open Loc
 
 val analyze_function :
-  Ain.Function.t -> Ain.Struct.t option -> Ast.statement -> Ast.statement
+  Ain.Function.t ->
+  Ain.Struct.t option ->
+  Ast.statement loc ->
+  Ast.statement loc

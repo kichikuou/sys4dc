@@ -117,7 +117,8 @@ let inspect_function (f : function_bytecode) =
   |> BasicBlock.generate_var_decls f.func
   |> ControlFlow.analyze
   |> (fun stmt ->
-       Stdio.printf "\nAST representation:\n%s\n" (Ast.show_statement stmt);
+       Stdio.printf "\nAST representation:\n%s\n"
+         ([%show: Ast.statement loc] stmt);
        stmt)
   |> TypeAnalysis.analyze_function f.func struc
   |> Transform.rename_labels |> Transform.recover_loop_initializer
@@ -151,11 +152,15 @@ let to_variable_list vars =
 let extract_array_dims stmt vars =
   let h = Stdlib.Hashtbl.create (Array.length vars) in
   List.iter
-    (match stmt with Ast.Block stmts -> stmts | _ -> [ stmt ])
+    (match stmt with { txt = Ast.Block stmts; _ } -> stmts | _ -> [ stmt ])
     ~f:(function
-      | Ast.Return _ -> ()
-      | Expression (Call (Builtin (Instructions.A_ALLOC, PageRef (_, v)), dims))
-        ->
+      | { txt = Ast.Return _; _ } -> ()
+      | {
+          txt =
+            Expression
+              (Call (Builtin (Instructions.A_ALLOC, PageRef (_, v)), dims));
+          _;
+        } ->
           Stdlib.Hashtbl.add h v dims
       | _ -> failwith "unexpected statement in array initializer");
   List.map (Array.to_list vars) ~f:(fun v ->

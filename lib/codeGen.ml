@@ -16,6 +16,7 @@
 
 open Core
 open Format
+open Loc
 open Type
 open Ast
 open Instructions
@@ -26,7 +27,7 @@ type function_t = {
   func : Ain.Function.t;
   struc : Ain.Struct.t option;
   name : string;
-  body : Ast.statement;
+  body : Ast.statement loc;
 }
 
 type struct_t = {
@@ -360,7 +361,8 @@ let print_function ppf (func : function_t) =
     | CaseStr (_, s) -> fprintf ppf "case \"%s\":\n" (escape_dq s)
     | Default _ -> fprintf ppf "default:\n"
   in
-  let rec pr_stmt indent in_else_if ppf = function
+  let rec pr_stmt indent in_else_if ppf { txt = stmt; _ } =
+    match stmt with
     | Block stmts ->
         print_indent indent ppf;
         pp_print_string ppf "{\n";
@@ -405,8 +407,10 @@ let print_function ppf (func : function_t) =
         print_indent indent ppf;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
-          (match stmt1 with Block stmts -> List.rev stmts | stmt -> [ stmt ]);
-        match stmt2 with
+          (match stmt1.txt with
+          | Block stmts -> List.rev stmts
+          | _ -> [ stmt1 ]);
+        match stmt2.txt with
         | Block [] ->
             print_indent indent ppf;
             pp_print_string ppf "}\n"
@@ -424,9 +428,9 @@ let print_function ppf (func : function_t) =
             print_indent indent ppf;
             pp_print_string ppf "{\n";
             pr_stmt_list (indent + 1) ppf
-              (match stmt2 with
+              (match stmt2.txt with
               | Block stmts -> List.rev stmts
-              | stmt -> [ stmt ]);
+              | _ -> [ stmt2 ]);
             print_indent indent ppf;
             pp_print_string ppf "}\n")
     | Switch (_, expr, body) ->
@@ -435,7 +439,7 @@ let print_function ppf (func : function_t) =
         print_indent indent ppf;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
-          (match body with Block stmts -> List.rev stmts | stmt -> [ stmt ]);
+          (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         print_indent indent ppf;
         pp_print_string ppf "}\n"
     | While (cond, body) ->
@@ -444,14 +448,14 @@ let print_function ppf (func : function_t) =
         print_indent indent ppf;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
-          (match body with Block stmts -> List.rev stmts | stmt -> [ stmt ]);
+          (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         print_indent indent ppf;
         pp_print_string ppf "}\n"
     | DoWhile (body, cond) ->
         print_indent indent ppf;
         pp_print_string ppf "do {\n";
         pr_stmt_list (indent + 1) ppf
-          (match body with Block stmts -> List.rev stmts | stmt -> [ stmt ]);
+          (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         print_indent indent ppf;
         fprintf ppf "} while (%a);\n" (pr_expr 0) cond
     | For (init, cond, inc, body) ->
@@ -466,7 +470,7 @@ let print_function ppf (func : function_t) =
         print_indent indent ppf;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
-          (match body with Block stmts -> List.rev stmts | stmt -> [ stmt ]);
+          (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         print_indent indent ppf;
         pp_print_string ppf "}\n"
     | Label label ->
@@ -507,7 +511,9 @@ let print_function ppf (func : function_t) =
   in
   pr_func_signature ppf func;
   let body =
-    match func.body with Block _ -> func.body | stmt -> Block [ stmt ]
+    match func.body.txt with
+    | Block _ -> func.body
+    | _ -> { txt = Block [ func.body ]; addr = func.body.addr }
   in
   pr_stmt 0 false ppf body
 

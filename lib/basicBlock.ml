@@ -27,13 +27,13 @@ type terminator =
   | DoWhile0 of int (* addr of branching basic block *)
 [@@deriving show { with_path = false }]
 
-type fragment = terminator * statement list
+type fragment = terminator loc * Ast.statement loc list
 [@@deriving show { with_path = false }]
 
 type 'a basic_block = {
   addr : int;
   end_addr : int;
-  labels : label list;
+  labels : label loc list;
   code : 'a;
   mutable nr_jump_srcs : int;
 }
@@ -63,6 +63,7 @@ let branch_target = function
 let make_basic_blocks func_end_addr code =
   let head_addrs = Hashtbl.create (module Int) in
   let add d labels addr =
+    let labels = List.map labels ~f:(fun label -> { txt = label; addr }) in
     Hashtbl.update head_addrs addr ~f:(function
       | None -> (d, labels)
       | Some (n, labels') -> (n + d, labels @ labels'))
@@ -115,7 +116,7 @@ let make_basic_blocks func_end_addr code =
             addr;
             end_addr;
             labels;
-            code = inst :: List.map insts ~f:(fun { txt; _ } -> txt);
+            code = { addr; txt = inst } :: insts;
             nr_jump_srcs;
           }
         in
@@ -128,17 +129,18 @@ type analyze_context = {
   func : Ain.Function.t;
   struc : Ain.Struct.t option;
   parent : Ain.Function.t option;
-  mutable instructions : instruction list;
+  mutable instructions : instruction loc list;
+  mutable address : int;
   mutable stack : expr list;
-  mutable stmts : statement list;
+  mutable stmts : statement loc list;
 }
 
 let fetch_instruction ctx =
   match ctx.instructions with
   | [] -> failwith "unexpected end of basic block"
-  | hd :: tl ->
+  | inst :: tl ->
       ctx.instructions <- tl;
-      hd
+      inst.txt
 
 let push ctx expr = ctx.stack <- expr :: ctx.stack
 let pushl ctx exprs = ctx.stack <- List.rev_append exprs ctx.stack
@@ -176,7 +178,9 @@ let assert_stack_empty ctx =
       Stdio.eprintf "Non-empty stack at statement end: %s\n"
         ([%show: expr list] stack)
 
-let emit_statement ctx stmt = ctx.stmts <- stmt :: ctx.stmts
+let emit_statement ctx stmt =
+  ctx.stmts <- { addr = ctx.address; txt = stmt } :: ctx.stmts;
+  ctx.address <- (match ctx.instructions with hd :: _ -> hd.addr | [] -> -1)
 
 let emit_expression ctx expr =
   assert_stack_empty ctx;
@@ -374,8 +378,11 @@ let objswap ctx type_ =
 let incdec ctx op =
   let consume_localref varno =
     match ctx.instructions with
-    | PUSHLOCALPAGE :: PUSH varno' :: REF :: rest when Int32.equal varno varno'
-      ->
+    | { txt = PUSHLOCALPAGE; _ }
+      :: { txt = PUSH varno'; _ }
+      :: { txt = REF; _ }
+      :: rest
+      when Int32.equal varno varno' ->
         ctx.instructions <- rest;
         true
     | _ -> false
@@ -477,7 +484,7 @@ let analyze ctx =
   let terminator = ref None in
   let set_terminator term =
     assert (List.is_empty ctx.instructions);
-    terminator := Some term
+    terminator := Some { txt = term; addr = ctx.address }
   in
   while not (List.is_empty ctx.instructions) do
     match fetch_instruction ctx with
@@ -509,7 +516,7 @@ let analyze ctx =
           | stack -> unexpected_stack "DUP2" stack)
     | DUP_X2 -> (
         match List.hd ctx.instructions with
-        | Some POP ->
+        | Some { txt = POP; _ } ->
             fetch_instruction ctx |> ignore;
             update_stack ctx (function
               | a :: b :: c :: stack -> b :: c :: a :: stack
@@ -1070,7 +1077,9 @@ let analyze ctx =
     | insn ->
         Printf.failwithf "Unknown instruction %s" (show_instruction insn) ()
   done;
-  (Option.value !terminator ~default:Seq, take_stack ctx, take_stmts ctx)
+  ( Option.value !terminator ~default:{ txt = Seq; addr = -1 },
+    take_stack ctx,
+    take_stmts ctx )
 
 let rec analyze_basic_blocks ctx stack = function
   | [] ->
@@ -1079,12 +1088,14 @@ let rec analyze_basic_blocks ctx stack = function
           | b, [], ss -> { bb with code = (b, ss) }
           | _ ->
               Printf.failwithf "non-empty stack in analyzed basic block: %s"
-                ([%show: (terminator * expr list * statement list) basic_block]
+                ([%show:
+                   (terminator loc * expr list * statement loc list) basic_block]
                    bb)
                 ())
       |> List.rev
   | bb :: rest ->
       ctx.instructions <- bb.code;
+      ctx.address <- bb.addr;
       let fragment = analyze ctx in
       let stack = { bb with code = fragment } :: stack in
       reduce ctx stack rest
@@ -1093,10 +1104,10 @@ and reduce ctx stack rest =
   assert (List.is_empty ctx.stmts);
   match stack with
   (* && operator *)
-  | { addr = label1; end_addr; code = Seq, [ Number 0l ], []; _ }
-    :: { code = Jump label2, [ Number 1l ], []; _ }
-    :: { code = Branch (label1', rhs), [], []; _ }
-    :: ({ code = Branch (label1'', lhs), estack, stmts; _ } as top)
+  | { addr = label1; end_addr; code = { txt = Seq; _ }, [ Number 0l ], []; _ }
+    :: { code = { txt = Jump label2; _ }, [ Number 1l ], []; _ }
+    :: { code = { txt = Branch (label1', rhs); _ }, [], []; _ }
+    :: ({ code = { txt = Branch (label1'', lhs); _ }, estack, stmts; _ } as top)
     :: stack'
     when label1 = label1' && label1 = label1'' && label2 = end_addr -> (
       match rest with
@@ -1113,10 +1124,10 @@ and reduce ctx stack rest =
             stack' bbs
       | [] -> failwith "unexpected end of function")
   (* || operator *)
-  | { addr = label1; end_addr; code = Seq, [ Number 1l ], []; _ }
-    :: { code = Jump label2, [ Number 0l ], []; _ }
-    :: { code = Branch (label1', rhs), [], []; _ }
-    :: ({ code = Branch (label1'', lhs), estack, stmts; _ } as top)
+  | { addr = label1; end_addr; code = { txt = Seq; _ }, [ Number 1l ], []; _ }
+    :: { code = { txt = Jump label2; _ }, [ Number 0l ], []; _ }
+    :: { code = { txt = Branch (label1', rhs); _ }, [], []; _ }
+    :: ({ code = { txt = Branch (label1'', lhs); _ }, estack, stmts; _ } as top)
     :: stack'
     when label1 = label1' && label1 = label1'' && label2 = end_addr -> (
       match rest with
@@ -1133,37 +1144,46 @@ and reduce ctx stack rest =
             stack' bbs
       | [] -> failwith "unexpected end of function")
   (* ?: operator *)
-  | { addr = label1; end_addr; code = Seq, [ c ], []; _ }
-    :: { code = Jump label2, [ b ], []; _ }
-    :: ({ code = Branch (label1', a), estack, stmts; _ } as top)
+  | { addr = label1; end_addr; code = { txt = Seq; _ }, [ c ], []; _ }
+    :: { code = { txt = Jump label2; _ }, [ b ], []; _ }
+    :: ({ code = { txt = Branch (label1', a); _ }, estack, stmts; _ } as top)
     :: stack'
     when label1 = label1' && label2 = end_addr ->
       let top' =
         {
           top with
           end_addr;
-          code = (Seq, TernaryOp (a, b, c) :: estack, stmts);
+          code = ({ txt = Seq; addr = -1 }, TernaryOp (a, b, c) :: estack, stmts);
         }
       in
       reduce ctx (top' :: stack') rest
   (* ?: operator with type coercion *)
-  | { addr = label1; end_addr = label2'; code = Jump label3, [ c ], []; _ }
-    :: { code = Jump label2, [ b ], []; _ }
-    :: ({ code = Branch (label1', a), estack, stmts; _ } as top)
+  | {
+      addr = label1;
+      end_addr = label2';
+      code = { txt = Jump label3; _ }, [ c ], [];
+      _;
+    }
+    :: { code = { txt = Jump label2; _ }, [ b ], []; _ }
+    :: ({ code = { txt = Branch (label1', a); _ }, estack, stmts; _ } as top)
     :: stack'
     when label1 = label1' && label2 = label2' && label3 = label2 + 2 -> (
       match rest with
-      | { code = [ ITOF ]; _ } :: rest ->
+      | { code = [ { txt = ITOF; _ } ]; _ } :: rest ->
           let top' =
             {
               top with
               end_addr = label3;
-              code = (Seq, TernaryOp (a, UnaryOp (ITOF, b), c) :: estack, stmts);
+              code =
+                ( { txt = Seq; addr = -1 },
+                  TernaryOp (a, UnaryOp (ITOF, b), c) :: estack,
+                  stmts );
             }
           in
           reduce ctx (top' :: stack') rest
       | _ -> failwith "not implemented")
-  | ({ code = Seq, (_ :: _ as estack), stmts; _ } as top) :: stack' -> (
+  | ({ code = { txt = Seq; _ }, (_ :: _ as estack), stmts; _ } as top) :: stack'
+    -> (
       match rest with
       | bb' :: rest' ->
           let bbs =
@@ -1190,7 +1210,15 @@ let rec replace_delegate_calls acc = function
 let create code end_addr func struc parent =
   code |> replace_delegate_calls [] |> make_basic_blocks end_addr
   |> analyze_basic_blocks
-       { func; struc; parent; instructions = []; stack = []; stmts = [] }
+       {
+         func;
+         struc;
+         parent;
+         instructions = [];
+         address = -1;
+         stack = [];
+         stmts = [];
+       }
        []
 
 let generate_var_decls (func : Ain.Function.t) bbs =
@@ -1227,5 +1255,8 @@ let generate_var_decls (func : Ain.Function.t) bbs =
     | stmt -> stmt
   in
   List.map bbs ~f:(function { code = terminator, stmts; _ } as bb ->
-      let stmts' = List.rev_map (List.rev stmts) ~f:replace_stmt in
+      let stmts' =
+        List.rev_map (List.rev stmts) ~f:(fun { addr; txt = stmt } ->
+            { addr; txt = replace_stmt stmt })
+      in
       { bb with code = (terminator, stmts') })

@@ -14,13 +14,15 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
+open Loc
+
 type variable = { v : Ain.Variable.t; dims : Ast.expr list }
 
 type function_t = {
   func : Ain.Function.t;
   struc : Ain.Struct.t option;
   name : string;
-  body : Ast.statement;
+  body : Ast.statement loc;
 }
 
 type struct_t = {

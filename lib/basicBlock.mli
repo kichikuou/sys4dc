@@ -26,13 +26,13 @@ type terminator =
 
 (* A piece of code held in a basic block. It consists of a sequence of
    statements followed by a terminator instruction. *)
-type fragment = terminator * Ast.statement list
+type fragment = terminator loc * Ast.statement loc list
 [@@deriving show { with_path = false }]
 
 type 'a basic_block = {
   addr : int;
   end_addr : int;
-  labels : Ast.label list;
+  labels : Ast.label loc list;
   code : 'a;
   mutable nr_jump_srcs : int;
 }
