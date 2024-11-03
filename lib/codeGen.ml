@@ -236,175 +236,184 @@ let pr_param_list pr_var ppf (params : Ain.Variable.t list) =
   in
   pp_print_list ~pp_sep:comma pr_var ppf params
 
-let print_function ppf (func : function_t) =
-  let rec pr_lvalue prec ppf = function
-    | NullRef -> pp_print_string ppf "NULL"
-    | PageRef (StructPage, var) -> fprintf ppf "this.%s" var.name
-    | PageRef (_, var) -> pp_print_string ppf var.name
-    | RefRef lval -> pr_lvalue prec ppf lval
-    | ArrayRef (array, index) ->
-        fprintf ppf "%a[%a]"
-          (pr_expr (prec_value PREC_DOT))
-          array (pr_expr 0) index
-    | MemberRef (obj, memb) ->
-        fprintf ppf "%a.%s" (pr_expr (prec_value PREC_DOT)) obj memb.name
-    | RefValue e -> pr_expr (prec_value PREC_DOT) ppf e
-    | ObjRef _ as lval ->
-        failwith ("pr_lvalue: unresolved ObjRef " ^ show_lvalue lval)
-    | IncDec (fix, op, lval) ->
-        let op = incdec_op op in
-        open_paren prec op.prec ppf;
-        (match fix with
-        | Prefix -> fprintf ppf "%s%a" op.sym (pr_lvalue prec) lval
-        | Postfix -> fprintf ppf "%a%s" (pr_lvalue prec) lval op.sym);
-        close_paren prec op.prec ppf
-  and pr_expr ?parent_op prec ppf = function
-    | Number n -> fprintf ppf "%ld" n
-    | Boolean b -> pp_print_string ppf (if b then "true" else "false")
-    | Character c -> pr_char ppf (Int32.to_int_exn c)
-    | Float x -> pp_print_string ppf (format_float x)
-    | String s -> fprintf ppf "\"%s\"" (escape_dq s)
-    | FuncAddr f -> fprintf ppf "&%s" f.name
-    | MemberPointer (struc, slot) ->
-        fprintf ppf "&%s::%s" Ain.ain.strt.(struc).name
-          Ain.ain.strt.(struc).members.(slot).name
-    | BoundMethod (Number -1l, f) ->
-        fprintf ppf "&%s" (Ain.Function.parse_name f).name
-    | BoundMethod (expr, f) ->
-        fprintf ppf "&%a.%s"
-          (pr_expr (prec_value PREC_DOT))
-          expr (Ain.Function.parse_name f).name
-    | Deref lval -> pr_lvalue prec ppf lval
-    | DerefRef lval -> pr_lvalue prec ppf lval
-    | New n -> fprintf ppf "new %s" Ain.ain.strt.(n).name
-    | DerefStruct (_, expr) -> pr_expr prec ppf expr
-    | Page StructPage -> pp_print_string ppf "this"
-    | Null -> pp_print_string ppf "NULL"
-    | Void -> pp_print_string ppf "<void>" (* FIXME *)
-    | UnaryOp (FTOI, expr) -> fprintf ppf "int(%a)" (pr_expr 0) expr
-    | UnaryOp (ITOF, expr) -> fprintf ppf "float(%a)" (pr_expr 0) expr
-    | UnaryOp (ITOLI, expr) -> fprintf ppf "lint(%a)" (pr_expr 0) expr
-    | UnaryOp (ITOB, Number 0l) -> pp_print_string ppf "false"
-    | UnaryOp (ITOB, Number 1l) -> pp_print_string ppf "true"
-    | UnaryOp (ITOB, expr) -> pr_expr prec ppf expr
-    | UnaryOp (STOI, expr) ->
-        fprintf ppf "%a.Int()" (pr_expr (prec_value PREC_DOT)) expr
-    | UnaryOp (I_STRING, expr) -> fprintf ppf "string(%a)" (pr_expr 0) expr
-    | UnaryOp (insn, expr) ->
-        let op = operator insn in
-        open_paren prec op.prec ppf;
-        fprintf ppf "%s%a" op.sym (pr_expr op.rprec) expr;
-        close_paren prec op.prec ppf
-    | BinaryOp (insn, lhs, rhs) ->
-        let op = operator insn in
-        pr_binary_op parent_op prec op ppf lhs rhs
-    | AssignOp (insn, lval, rhs) ->
-        let op = operator insn in
-        pr_binary_op parent_op prec op ppf (Deref lval) rhs
-    | TernaryOp (expr1, expr2, expr3) ->
-        let op_prec = prec_value PREC_QUESTION in
-        open_paren prec op_prec ppf;
-        fprintf ppf "%a ? %a : %a"
-          (pr_expr (op_prec + 1))
-          expr1
-          (pr_expr (op_prec + 1))
-          expr2 (pr_expr op_prec) expr3;
-        close_paren prec op_prec ppf
-    | Call (f, args) -> fprintf ppf "%a(%a)" pr_callable f pr_arg_list args
-    | C_Ref (str, i) ->
-        fprintf ppf "%a[%a]" (pr_expr (prec_value PREC_DOT)) str (pr_expr 0) i
-    | C_Assign (str, i, ch) ->
-        pr_binary_op parent_op prec (operator ASSIGN) ppf (C_Ref (str, i)) ch
-    | e ->
-        eprintf "%a\n" pp_expr e;
-        failwith "pr_expr: not implemented"
-  and pr_binary_op parent_op prec op ppf lhs rhs =
-    (* Match the AinDecompiler's parenthesizing rules. *)
-    let prec' =
-      match parent_op with
-      | Some pop ->
-          if prec = op.prec && not (String.equal pop.sym op.sym) then prec + 1
-          else prec
-      | None -> prec
-    in
-    let space = if String.equal op.sym "," then "" else " " in
-    open_paren prec' op.prec ppf;
-    fprintf ppf "%a%s%s %a"
-      (pr_expr ~parent_op:op op.lprec)
-      lhs space op.sym
-      (pr_expr ~parent_op:op op.rprec)
-      rhs;
-    close_paren prec' op.prec ppf
-  and pr_callable ppf = function
-    | Function func -> pp_print_string ppf func.name
-    | FuncPtr (_, e) -> pr_expr (prec_value PREC_DOT) ppf e
-    | Delegate (_, e) -> pr_expr (prec_value PREC_DOT) ppf e
-    | SysCall n -> pp_print_string ppf syscalls.(n).name
-    | HllFunc (lib, func) -> fprintf ppf "%s.%s" lib func.name
-    | Method (expr, func) ->
-        fprintf ppf "%a.%s"
-          (pr_expr (prec_value PREC_DOT))
-          expr
-          (strip_class_name func.name)
-    | Builtin (insn, lval) ->
-        fprintf ppf "%a.%s"
-          (pr_lvalue (prec_value PREC_DOT))
-          lval (builtin_method_name insn)
-    | Builtin2 (insn, expr) ->
-        fprintf ppf "%a.%s"
-          (pr_expr (prec_value PREC_DOT))
-          expr (builtin_method_name insn)
-  and pr_arg_list ppf args = pp_print_list ~pp_sep:comma (pr_expr 0) ppf args in
+let rec pr_lvalue prec ppf = function
+  | NullRef -> pp_print_string ppf "NULL"
+  | PageRef (StructPage, var) -> fprintf ppf "this.%s" var.name
+  | PageRef (_, var) -> pp_print_string ppf var.name
+  | RefRef lval -> pr_lvalue prec ppf lval
+  | ArrayRef (array, index) ->
+      fprintf ppf "%a[%a]"
+        (pr_expr (prec_value PREC_DOT))
+        array (pr_expr 0) index
+  | MemberRef (obj, memb) ->
+      fprintf ppf "%a.%s" (pr_expr (prec_value PREC_DOT)) obj memb.name
+  | RefValue e -> pr_expr (prec_value PREC_DOT) ppf e
+  | ObjRef _ as lval ->
+      failwith ("pr_lvalue: unresolved ObjRef " ^ show_lvalue lval)
+  | IncDec (fix, op, lval) ->
+      let op = incdec_op op in
+      open_paren prec op.prec ppf;
+      (match fix with
+      | Prefix -> fprintf ppf "%s%a" op.sym (pr_lvalue prec) lval
+      | Postfix -> fprintf ppf "%a%s" (pr_lvalue prec) lval op.sym);
+      close_paren prec op.prec ppf
+
+and pr_expr ?parent_op prec ppf = function
+  | Number n -> fprintf ppf "%ld" n
+  | Boolean b -> pp_print_string ppf (if b then "true" else "false")
+  | Character c -> pr_char ppf (Int32.to_int_exn c)
+  | Float x -> pp_print_string ppf (format_float x)
+  | String s -> fprintf ppf "\"%s\"" (escape_dq s)
+  | FuncAddr f -> fprintf ppf "&%s" f.name
+  | MemberPointer (struc, slot) ->
+      fprintf ppf "&%s::%s" Ain.ain.strt.(struc).name
+        Ain.ain.strt.(struc).members.(slot).name
+  | BoundMethod (Number -1l, f) ->
+      fprintf ppf "&%s" (Ain.Function.parse_name f).name
+  | BoundMethod (expr, f) ->
+      fprintf ppf "&%a.%s"
+        (pr_expr (prec_value PREC_DOT))
+        expr (Ain.Function.parse_name f).name
+  | Deref lval -> pr_lvalue prec ppf lval
+  | DerefRef lval -> pr_lvalue prec ppf lval
+  | New n -> fprintf ppf "new %s" Ain.ain.strt.(n).name
+  | DerefStruct (_, expr) -> pr_expr prec ppf expr
+  | Page StructPage -> pp_print_string ppf "this"
+  | Null -> pp_print_string ppf "NULL"
+  | Void -> pp_print_string ppf "<void>" (* FIXME *)
+  | UnaryOp (FTOI, expr) -> fprintf ppf "int(%a)" (pr_expr 0) expr
+  | UnaryOp (ITOF, expr) -> fprintf ppf "float(%a)" (pr_expr 0) expr
+  | UnaryOp (ITOLI, expr) -> fprintf ppf "lint(%a)" (pr_expr 0) expr
+  | UnaryOp (ITOB, Number 0l) -> pp_print_string ppf "false"
+  | UnaryOp (ITOB, Number 1l) -> pp_print_string ppf "true"
+  | UnaryOp (ITOB, expr) -> pr_expr prec ppf expr
+  | UnaryOp (STOI, expr) ->
+      fprintf ppf "%a.Int()" (pr_expr (prec_value PREC_DOT)) expr
+  | UnaryOp (I_STRING, expr) -> fprintf ppf "string(%a)" (pr_expr 0) expr
+  | UnaryOp (insn, expr) ->
+      let op = operator insn in
+      open_paren prec op.prec ppf;
+      fprintf ppf "%s%a" op.sym (pr_expr op.rprec) expr;
+      close_paren prec op.prec ppf
+  | BinaryOp (insn, lhs, rhs) ->
+      let op = operator insn in
+      pr_binary_op parent_op prec op ppf lhs rhs
+  | AssignOp (insn, lval, rhs) ->
+      let op = operator insn in
+      pr_binary_op parent_op prec op ppf (Deref lval) rhs
+  | TernaryOp (expr1, expr2, expr3) ->
+      let op_prec = prec_value PREC_QUESTION in
+      open_paren prec op_prec ppf;
+      fprintf ppf "%a ? %a : %a"
+        (pr_expr (op_prec + 1))
+        expr1
+        (pr_expr (op_prec + 1))
+        expr2 (pr_expr op_prec) expr3;
+      close_paren prec op_prec ppf
+  | Call (f, args) -> fprintf ppf "%a(%a)" pr_callable f pr_arg_list args
+  | C_Ref (str, i) ->
+      fprintf ppf "%a[%a]" (pr_expr (prec_value PREC_DOT)) str (pr_expr 0) i
+  | C_Assign (str, i, ch) ->
+      pr_binary_op parent_op prec (operator ASSIGN) ppf (C_Ref (str, i)) ch
+  | e ->
+      eprintf "%a\n" pp_expr e;
+      failwith "pr_expr: not implemented"
+
+and pr_binary_op parent_op prec op ppf lhs rhs =
+  (* Match the AinDecompiler's parenthesizing rules. *)
+  let prec' =
+    match parent_op with
+    | Some pop ->
+        if prec = op.prec && not (String.equal pop.sym op.sym) then prec + 1
+        else prec
+    | None -> prec
+  in
+  let space = if String.equal op.sym "," then "" else " " in
+  open_paren prec' op.prec ppf;
+  fprintf ppf "%a%s%s %a"
+    (pr_expr ~parent_op:op op.lprec)
+    lhs space op.sym
+    (pr_expr ~parent_op:op op.rprec)
+    rhs;
+  close_paren prec' op.prec ppf
+
+and pr_callable ppf = function
+  | Function func -> pp_print_string ppf func.name
+  | FuncPtr (_, e) -> pr_expr (prec_value PREC_DOT) ppf e
+  | Delegate (_, e) -> pr_expr (prec_value PREC_DOT) ppf e
+  | SysCall n -> pp_print_string ppf syscalls.(n).name
+  | HllFunc (lib, func) -> fprintf ppf "%s.%s" lib func.name
+  | Method (expr, func) ->
+      fprintf ppf "%a.%s"
+        (pr_expr (prec_value PREC_DOT))
+        expr
+        (strip_class_name func.name)
+  | Builtin (insn, lval) ->
+      fprintf ppf "%a.%s"
+        (pr_lvalue (prec_value PREC_DOT))
+        lval (builtin_method_name insn)
+  | Builtin2 (insn, expr) ->
+      fprintf ppf "%a.%s"
+        (pr_expr (prec_value PREC_DOT))
+        expr (builtin_method_name insn)
+
+and pr_arg_list ppf args = pp_print_list ~pp_sep:comma (pr_expr 0) ppf args
+
+let print_function ~print_addr ppf (func : function_t) =
+  let addr_and_indent addr indent =
+    if print_addr then fprintf ppf "/* %08x */" addr;
+    print_indent indent ppf
+  in
   let pr_label ppf = function
     | Address label -> fprintf ppf "label%d:\n" label
     | CaseInt (_, k) -> fprintf ppf "case %ld:\n" k
     | CaseStr (_, s) -> fprintf ppf "case \"%s\":\n" (escape_dq s)
     | Default _ -> fprintf ppf "default:\n"
   in
-  let rec pr_stmt indent in_else_if ppf { txt = stmt; _ } =
-    match stmt with
+  let rec pr_stmt indent in_else_if ppf stmt =
+    match stmt.txt with
     | Block stmts ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf (List.rev stmts);
-        print_indent indent ppf;
+        addr_and_indent 0 indent;
         pp_print_string ppf "}\n"
     | Expression expr ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "%a;\n" (pr_expr 0) expr
     | Return None ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         pp_print_string ppf "return;\n"
     | Return (Some expr) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "return %a;\n" (pr_expr 0) expr
     | Break ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         pp_print_string ppf "break;\n"
     | Continue ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         pp_print_string ppf "continue;\n"
     | Goto (label, _) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "goto label%d;\n" label
     | VarDecl (var, None) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "%a;\n" pr_vardecl var
     | VarDecl (var, Some (_, Call (Builtin (A_ALLOC, _), dims))) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "%a%a;\n" pr_vardecl var
           (pr_array_dims ~pr_expr:(pr_expr 0))
           dims
     | VarDecl (var, Some (insn, e)) ->
         let op = operator insn in
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "%a = %a;\n" pr_vardecl var
           (pr_expr ~parent_op:op op.rprec)
           e
     | IfElse (expr, stmt1, stmt2) -> (
-        if not in_else_if then print_indent indent ppf;
+        if not in_else_if then addr_and_indent stmt.addr indent;
         fprintf ppf "if (%a)\n" (pr_expr 0) expr;
-        print_indent indent ppf;
+        addr_and_indent stmt1.addr indent;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
           (match stmt1.txt with
@@ -412,54 +421,54 @@ let print_function ppf (func : function_t) =
           | _ -> [ stmt1 ]);
         match stmt2.txt with
         | Block [] ->
-            print_indent indent ppf;
+            addr_and_indent 0 indent;
             pp_print_string ppf "}\n"
         | IfElse _ ->
-            print_indent indent ppf;
+            addr_and_indent 0 indent;
             pp_print_string ppf "}\n";
-            print_indent indent ppf;
+            addr_and_indent stmt2.addr indent;
             pp_print_string ppf "else ";
             pr_stmt indent true ppf stmt2
         | _ ->
-            print_indent indent ppf;
+            addr_and_indent 0 indent;
             pp_print_string ppf "}\n";
-            print_indent indent ppf;
+            addr_and_indent stmt2.addr indent;
             pp_print_string ppf "else\n";
-            print_indent indent ppf;
+            addr_and_indent stmt2.addr indent;
             pp_print_string ppf "{\n";
             pr_stmt_list (indent + 1) ppf
               (match stmt2.txt with
               | Block stmts -> List.rev stmts
               | _ -> [ stmt2 ]);
-            print_indent indent ppf;
+            addr_and_indent 0 indent;
             pp_print_string ppf "}\n")
     | Switch (_, expr, body) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "switch (%a)\n" (pr_expr 0) expr;
-        print_indent indent ppf;
+        addr_and_indent 0 indent;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        print_indent indent ppf;
+        addr_and_indent 0 indent;
         pp_print_string ppf "}\n"
     | While (cond, body) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "while (%a)\n" (pr_expr 0) cond;
-        print_indent indent ppf;
+        addr_and_indent body.addr indent;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        print_indent indent ppf;
+        addr_and_indent 0 indent;
         pp_print_string ppf "}\n"
     | DoWhile (body, cond) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         pp_print_string ppf "do {\n";
         pr_stmt_list (indent + 1) ppf
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        print_indent indent ppf;
+        addr_and_indent 0 (* FIXME *) indent;
         fprintf ppf "} while (%a);\n" (pr_expr 0) cond
     | For (init, cond, inc, body) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         pp_print_string ppf "for (";
         (match init with None -> () | Some e -> pr_expr 0 ppf e);
         pp_print_string ppf "; ";
@@ -467,29 +476,29 @@ let print_function ppf (func : function_t) =
         pp_print_string ppf "; ";
         (match inc with None -> () | Some e -> pr_expr 0 ppf e);
         fprintf ppf ")\n";
-        print_indent indent ppf;
+        addr_and_indent body.addr indent;
         pp_print_string ppf "{\n";
         pr_stmt_list (indent + 1) ppf
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        print_indent indent ppf;
+        addr_and_indent 0 indent;
         pp_print_string ppf "}\n"
     | Label label ->
-        print_indent (indent - 1) ppf;
+        addr_and_indent stmt.addr (indent - 1);
         pr_label ppf label
     | Assert expr ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "assert(%a);\n" (pr_expr 0) expr
     | ScenarioJump s ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "jump %s;\n" s
     | Msg (s, Some (Call (f, []))) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "'%s' %a;\n" (escape_sq s) pr_callable f
     | Msg (s, Some e) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "'%s' %a;\n" (escape_sq s) (pr_expr 0) e
     | Msg (s, None) ->
-        print_indent indent ppf;
+        addr_and_indent stmt.addr indent;
         fprintf ppf "'%s';\n" (escape_sq s)
   and pr_stmt_list indent ppf stmts =
     pp_print_list ~pp_sep:(fun _ _ -> ()) (pr_stmt indent false) ppf stmts

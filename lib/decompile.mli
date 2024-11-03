@@ -21,10 +21,11 @@ type decompiled_ain = {
 }
 
 val decompile : unit -> decompiled_ain
-val inspect : string -> unit
+val inspect : string -> print_addr:bool -> unit
 
 val export :
   decompiled_ain ->
   string ->
   (string -> (Format.formatter -> unit) -> unit) ->
+  print_addr:bool ->
   unit

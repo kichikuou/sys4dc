@@ -107,7 +107,7 @@ let decompile_function (f : function_bytecode) =
     Stdio.eprintf "Error while decompiling function %s\n" f.func.name;
     raise e
 
-let inspect_function (f : function_bytecode) =
+let inspect_function (f : function_bytecode) ~print_addr =
   let struc, name = parse_method_name f.func.name in
   (BasicBlock.create f.code f.end_addr f.func struc f.parent
   |> (fun bbs ->
@@ -132,7 +132,7 @@ let inspect_function (f : function_bytecode) =
   |> fun body ->
   Stdio.printf "\nDecompiled code:\n";
   CodeGen.(
-    print_function Stdlib.Format.std_formatter
+    print_function ~print_addr Stdlib.Format.std_formatter
       { func = f.func; struc; name; body })
 
 let group_by_source_file code =
@@ -257,7 +257,7 @@ let inspect funcname =
   | None -> failwith ("cannot find function " ^ funcname)
   | Some f -> inspect_function f
 
-let export decompiled ain_name output_to_formatter =
+let export decompiled ain_name output_to_formatter ~print_addr =
   let sources = ref [] in
   let output_source fname f =
     sources := fname :: !sources;
@@ -285,7 +285,7 @@ let export decompiled ain_name output_to_formatter =
       if not (List.is_empty funcs) then
         output_source fname (fun ppf ->
             List.iter funcs ~f:(fun func ->
-                CodeGen.print_function ppf func;
+                CodeGen.print_function ~print_addr ppf func;
                 Stdlib.Format.pp_print_string ppf "\n")));
   output_to_formatter "main.inc" (fun ppf ->
       CodeGen.print_inc ppf (List.rev !sources));

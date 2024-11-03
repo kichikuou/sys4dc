@@ -33,7 +33,7 @@ type struct_t = {
 
 type project_t = { name : string }
 
-val print_function : Format.formatter -> function_t -> unit
+val print_function : print_addr:bool -> Format.formatter -> function_t -> unit
 val print_struct_decl : Format.formatter -> struct_t -> unit
 val print_functype_decl : Format.formatter -> string -> Ain.FuncType.t -> unit
 val print_globals : Format.formatter -> variable list -> unit

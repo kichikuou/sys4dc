@@ -39,6 +39,7 @@ let command =
      and inspect_function =
        flag "-inspect" (optional string)
          ~doc:"function Inspect the decompilation process of a function"
+     and print_addr = flag "-address" no_arg ~doc:" Print addresses"
      and ain_file = anon ("ain-file" %: string) in
      fun () ->
        Ain.load ain_file;
@@ -48,6 +49,7 @@ let command =
            Decompile.export decompiled
              (Filename.basename ain_file)
              (output_formatter_getter output_dir)
-       | Some funcname -> Decompile.inspect funcname)
+             ~print_addr
+       | Some funcname -> Decompile.inspect funcname ~print_addr)
 
 let () = Command_unix.run command
