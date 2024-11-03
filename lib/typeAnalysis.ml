@@ -362,9 +362,9 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         | While (cond, stmt) ->
             let cond', _ = analyze_expr Bool cond in
             While (cond', analyze_statement stmt)
-        | DoWhile (stmt, cond) ->
+        | DoWhile (stmt, { txt = cond; addr }) ->
             let cond', _ = analyze_expr Bool cond in
-            DoWhile (analyze_statement stmt, cond')
+            DoWhile (analyze_statement stmt, { txt = cond'; addr })
         | Switch (id, expr, stmt) ->
             let expr', _ = analyze_expr Any expr in
             Switch (id, expr', analyze_statement stmt)

@@ -465,8 +465,8 @@ let print_function ~print_addr ppf (func : function_t) =
         pp_print_string ppf "do {\n";
         pr_stmt_list (indent + 1) ppf
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        addr_and_indent 0 (* FIXME *) indent;
-        fprintf ppf "} while (%a);\n" (pr_expr 0) cond
+        addr_and_indent cond.addr indent;
+        fprintf ppf "} while (%a);\n" (pr_expr 0) cond.txt
     | For (init, cond, inc, body) ->
         addr_and_indent stmt.addr indent;
         pp_print_string ppf "for (";

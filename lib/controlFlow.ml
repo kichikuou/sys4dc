@@ -532,7 +532,7 @@ let reduce_do_while cfg marker_node =
       let bb0 = CFG.value_exn node0 in
       let bbk = CFG.value_exn nodek in
       match bbk with
-      | { code = { txt = Branch (_, expr); _ }, stmts0; _ } ->
+      | { code = { txt = Branch (_, expr); addr = expr_addr }, stmts0; _ } ->
           CFG.set nodek { bbk with code = ({ txt = Seq; addr = -1 }, stmts0) };
           let body =
             CFG.splice cfg node0 (CFG.next cfg nodek)
@@ -549,7 +549,13 @@ let reduce_do_while cfg marker_node =
               bb0 with
               code =
                 ( { txt = Seq; addr = -1 },
-                  [ { txt = DoWhile (body, negate expr); addr = body.addr } ] );
+                  [
+                    {
+                      txt =
+                        DoWhile (body, { txt = negate expr; addr = expr_addr });
+                      addr = body.addr;
+                    };
+                  ] );
               end_addr = bbk.end_addr;
               nr_jump_srcs = bb0.nr_jump_srcs - 1;
             }

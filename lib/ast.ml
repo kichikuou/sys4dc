@@ -87,7 +87,7 @@ type statement =
   | IfElse of
       expr * statement loc * statement loc (* (cond, thenBlock, elseBlock) *)
   | While of expr * statement loc (* (cond, block) *)
-  | DoWhile of statement loc * expr (* (block, cond) *)
+  | DoWhile of statement loc * expr loc (* (block, cond) *)
   | Switch of int * expr * statement loc (* (switch_id, expr, body) *)
   | For of
       expr option
@@ -237,7 +237,8 @@ let map_expr stmt ~f =
       | IfElse (e, stmt1, stmt2) ->
           IfElse (rec_expr e, rec_stmt stmt1, rec_stmt stmt2)
       | While (cond, body) -> While (rec_expr cond, rec_stmt body)
-      | DoWhile (body, cond) -> DoWhile (rec_stmt body, rec_expr cond)
+      | DoWhile (body, { txt = cond; addr }) ->
+          DoWhile (rec_stmt body, { txt = rec_expr cond; addr })
       | For (init, cond, inc, body) ->
           For
             ( Option.map ~f:rec_expr init,
@@ -341,7 +342,7 @@ let walk ?(stmt_cb = fun _ -> ()) ?(expr_cb = fun _ -> ())
     | While (cond, body) ->
         rec_expr cond;
         rec_stmt body
-    | DoWhile (body, cond) ->
+    | DoWhile (body, { txt = cond; _ }) ->
         rec_stmt body;
         rec_expr cond
     | For (init, cond, inc, body) ->
