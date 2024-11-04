@@ -17,18 +17,20 @@
 open Core
 open Sys4dc
 
-let output_formatter_getter out_dir_opt fname f =
+let output_printer_getter out_dir_opt fname f =
   match out_dir_opt with
   | None ->
       let ppf = Format.std_formatter in
       Format.fprintf ppf "FILE %s\n\n" fname;
-      f ppf
+      f (CodeGen.create_printer ppf "")
   | Some out_dir ->
-      let path = Filename.of_parts (out_dir :: String.split fname ~on:'\\') in
-      Core_unix.mkdir_p (Filename.dirname path);
-      let outc = Out_channel.create path in
+      let fname_components = String.split fname ~on:'\\' in
+      let unix_fname = String.concat ~sep:"/" fname_components in
+      let output_path = Filename.of_parts (out_dir :: fname_components) in
+      Core_unix.mkdir_p (Filename.dirname output_path);
+      let outc = Out_channel.create output_path in
       let ppf = Format.formatter_of_out_channel outc in
-      f ppf;
+      f (CodeGen.create_printer ppf unix_fname);
       Format.pp_print_flush ppf ();
       Out_channel.close outc
 
@@ -48,7 +50,7 @@ let command =
            let decompiled = Decompile.decompile () in
            Decompile.export decompiled
              (Filename.basename ain_file)
-             (output_formatter_getter output_dir)
+             (output_printer_getter output_dir)
              ~print_addr
        | Some funcname -> Decompile.inspect funcname ~print_addr)
 

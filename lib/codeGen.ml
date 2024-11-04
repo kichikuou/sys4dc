@@ -60,7 +60,6 @@ let _ = (min_op_prec, max_op_prec, op_prec_of_enum)
 type op_associativity = Left | Right
 
 let prec_value p = op_prec_to_enum p * 2
-let print_indent n ppf = pp_print_string ppf (String.make n '\t')
 let comma ppf _ = fprintf ppf ", "
 let open_paren prec op_prec ppf = if prec > op_prec then pp_print_string ppf "("
 
@@ -359,266 +358,279 @@ and pr_callable ppf = function
 
 and pr_arg_list ppf args = pp_print_list ~pp_sep:comma (pr_expr 0) ppf args
 
-let print_function ~print_addr ppf (func : function_t) =
+type printer = { ppf : Format.formatter; file : string; mutable line : int }
+
+let create_printer ppf file = { ppf; file; line = 1 }
+
+let print_newline pr =
+  pr.line <- pr.line + 1;
+  pp_print_newline pr.ppf ()
+
+let print_indent pr n = pp_print_string pr.ppf (String.make n '\t')
+let println pr fmt = kfprintf (fun _ -> print_newline pr) pr.ppf fmt
+
+let print_function ~print_addr pr (func : function_t) =
   let addr_and_indent addr indent =
-    if print_addr then fprintf ppf "/* %08x */" addr;
-    print_indent indent ppf
+    if print_addr then fprintf pr.ppf "/* %08x */" addr;
+    print_indent pr indent
   in
-  let pr_label ppf = function
-    | Address label -> fprintf ppf "label%d:\n" label
-    | CaseInt (_, k) -> fprintf ppf "case %ld:\n" k
-    | CaseStr (_, s) -> fprintf ppf "case \"%s\":\n" (escape_dq s)
-    | Default _ -> fprintf ppf "default:\n"
+  let pr_label = function
+    | Address label -> println pr "label%d:" label
+    | CaseInt (_, k) -> println pr "case %ld:" k
+    | CaseStr (_, s) -> println pr "case \"%s\":" (escape_dq s)
+    | Default _ -> println pr "default:"
   in
-  let rec pr_stmt indent in_else_if ppf stmt =
+  let rec print_stmt indent in_else_if stmt =
     match stmt.txt with
     | Block stmts ->
         addr_and_indent stmt.addr indent;
-        pp_print_string ppf "{\n";
-        pr_stmt_list (indent + 1) ppf (List.rev stmts);
+        println pr "{";
+        print_stmt_list (indent + 1) (List.rev stmts);
         addr_and_indent 0 indent;
-        pp_print_string ppf "}\n"
+        println pr "}"
     | Expression expr ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "%a;\n" (pr_expr 0) expr
+        println pr "%a;" (pr_expr 0) expr
     | Return None ->
         addr_and_indent stmt.addr indent;
-        pp_print_string ppf "return;\n"
+        println pr "return;"
     | Return (Some expr) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "return %a;\n" (pr_expr 0) expr
+        println pr "return %a;" (pr_expr 0) expr
     | Break ->
         addr_and_indent stmt.addr indent;
-        pp_print_string ppf "break;\n"
+        println pr "break;"
     | Continue ->
         addr_and_indent stmt.addr indent;
-        pp_print_string ppf "continue;\n"
+        println pr "continue;"
     | Goto (label, _) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "goto label%d;\n" label
+        println pr "goto label%d;" label
     | VarDecl (var, None) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "%a;\n" pr_vardecl var
+        println pr "%a;" pr_vardecl var
     | VarDecl (var, Some (_, Call (Builtin (A_ALLOC, _), dims))) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "%a%a;\n" pr_vardecl var
+        println pr "%a%a;" pr_vardecl var
           (pr_array_dims ~pr_expr:(pr_expr 0))
           dims
     | VarDecl (var, Some (insn, e)) ->
         let op = operator insn in
         addr_and_indent stmt.addr indent;
-        fprintf ppf "%a = %a;\n" pr_vardecl var
-          (pr_expr ~parent_op:op op.rprec)
-          e
+        println pr "%a = %a;" pr_vardecl var (pr_expr ~parent_op:op op.rprec) e
     | IfElse (expr, stmt1, stmt2) -> (
         if not in_else_if then addr_and_indent stmt.addr indent;
-        fprintf ppf "if (%a)\n" (pr_expr 0) expr;
+        println pr "if (%a)" (pr_expr 0) expr;
         addr_and_indent stmt1.addr indent;
-        pp_print_string ppf "{\n";
-        pr_stmt_list (indent + 1) ppf
+        println pr "{";
+        print_stmt_list (indent + 1)
           (match stmt1.txt with
           | Block stmts -> List.rev stmts
           | _ -> [ stmt1 ]);
         match stmt2.txt with
         | Block [] ->
             addr_and_indent 0 indent;
-            pp_print_string ppf "}\n"
+            println pr "}"
         | IfElse _ ->
             addr_and_indent 0 indent;
-            pp_print_string ppf "}\n";
+            println pr "}";
             addr_and_indent stmt2.addr indent;
-            pp_print_string ppf "else ";
-            pr_stmt indent true ppf stmt2
+            pp_print_string pr.ppf "else ";
+            print_stmt indent true stmt2
         | _ ->
             addr_and_indent 0 indent;
-            pp_print_string ppf "}\n";
+            println pr "}";
             addr_and_indent stmt2.addr indent;
-            pp_print_string ppf "else\n";
+            println pr "else";
             addr_and_indent stmt2.addr indent;
-            pp_print_string ppf "{\n";
-            pr_stmt_list (indent + 1) ppf
+            println pr "{";
+            print_stmt_list (indent + 1)
               (match stmt2.txt with
               | Block stmts -> List.rev stmts
               | _ -> [ stmt2 ]);
             addr_and_indent 0 indent;
-            pp_print_string ppf "}\n")
+            println pr "}")
     | Switch (_, expr, body) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "switch (%a)\n" (pr_expr 0) expr;
+        println pr "switch (%a)" (pr_expr 0) expr;
         addr_and_indent 0 indent;
-        pp_print_string ppf "{\n";
-        pr_stmt_list (indent + 1) ppf
+        println pr "{";
+        print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         addr_and_indent 0 indent;
-        pp_print_string ppf "}\n"
+        println pr "}"
     | While (cond, body) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "while (%a)\n" (pr_expr 0) cond;
+        println pr "while (%a)" (pr_expr 0) cond;
         addr_and_indent body.addr indent;
-        pp_print_string ppf "{\n";
-        pr_stmt_list (indent + 1) ppf
+        println pr "{";
+        print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         addr_and_indent 0 indent;
-        pp_print_string ppf "}\n"
+        println pr "}"
     | DoWhile (body, cond) ->
         addr_and_indent stmt.addr indent;
-        pp_print_string ppf "do {\n";
-        pr_stmt_list (indent + 1) ppf
+        println pr "do {";
+        print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         addr_and_indent cond.addr indent;
-        fprintf ppf "} while (%a);\n" (pr_expr 0) cond.txt
+        println pr "} while (%a);" (pr_expr 0) cond.txt
     | For (init, cond, inc, body) ->
         addr_and_indent stmt.addr indent;
-        pp_print_string ppf "for (";
-        (match init with None -> () | Some e -> pr_expr 0 ppf e);
-        pp_print_string ppf "; ";
-        (match cond with None -> () | Some e -> pr_expr 0 ppf e);
-        pp_print_string ppf "; ";
-        (match inc with None -> () | Some e -> pr_expr 0 ppf e);
-        fprintf ppf ")\n";
+        pp_print_string pr.ppf "for (";
+        (match init with None -> () | Some e -> pr_expr 0 pr.ppf e);
+        pp_print_string pr.ppf "; ";
+        (match cond with None -> () | Some e -> pr_expr 0 pr.ppf e);
+        pp_print_string pr.ppf "; ";
+        (match inc with None -> () | Some e -> pr_expr 0 pr.ppf e);
+        println pr ")";
         addr_and_indent body.addr indent;
-        pp_print_string ppf "{\n";
-        pr_stmt_list (indent + 1) ppf
+        println pr "{";
+        print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
         addr_and_indent 0 indent;
-        pp_print_string ppf "}\n"
+        println pr "}"
     | Label label ->
         addr_and_indent stmt.addr (indent - 1);
-        pr_label ppf label
+        pr_label label
     | Assert expr ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "assert(%a);\n" (pr_expr 0) expr
+        println pr "assert(%a);" (pr_expr 0) expr
     | ScenarioJump s ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "jump %s;\n" s
+        println pr "jump %s;" s
     | Msg (s, Some (Call (f, []))) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "'%s' %a;\n" (escape_sq s) pr_callable f
+        println pr "'%s' %a;" (escape_sq s) pr_callable f
     | Msg (s, Some e) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "'%s' %a;\n" (escape_sq s) (pr_expr 0) e
+        println pr "'%s' %a;" (escape_sq s) (pr_expr 0) e
     | Msg (s, None) ->
         addr_and_indent stmt.addr indent;
-        fprintf ppf "'%s';\n" (escape_sq s)
-  and pr_stmt_list indent ppf stmts =
-    pp_print_list ~pp_sep:(fun _ _ -> ()) (pr_stmt indent false) ppf stmts
+        println pr "'%s';" (escape_sq s)
+  and print_stmt_list indent stmts =
+    List.iter stmts ~f:(fun stmt -> print_stmt indent false stmt)
   in
-  let pr_func_signature ppf (func : function_t) =
+  let print_func_signature (func : function_t) =
     let return_type = func.func.return_type in
     (match func.struc with
     | Some (struc : Ain.Struct.t) ->
         if String.equal func.name "0" then
-          fprintf ppf "%s::%s" struc.name struc.name
+          fprintf pr.ppf "%s::%s" struc.name struc.name
         else if String.equal func.name "1" then
-          fprintf ppf "%s::~%s" struc.name struc.name
-        else fprintf ppf "%a %s::%s" pr_type return_type struc.name func.name
+          fprintf pr.ppf "%s::~%s" struc.name struc.name
+        else fprintf pr.ppf "%a %s::%s" pr_type return_type struc.name func.name
     | None ->
-        if func.func.is_label then fprintf ppf "#%s" func.name
-        else fprintf ppf "%a %s" pr_type return_type func.name);
-    fprintf ppf "(%a)\n" (pr_param_list pr_vardecl)
-      (Ain.Function.args func.func)
+        if func.func.is_label then fprintf pr.ppf "#%s" func.name
+        else fprintf pr.ppf "%a %s" pr_type return_type func.name);
+    println pr "(%a)" (pr_param_list pr_vardecl) (Ain.Function.args func.func)
   in
-  pr_func_signature ppf func;
+  print_func_signature func;
   let body =
     match func.body.txt with
     | Block _ -> func.body
     | _ -> { txt = Block [ func.body ]; addr = func.body.addr }
   in
-  pr_stmt 0 false ppf body
+  print_stmt 0 false body
 
-let print_struct_decl ppf (struc : struct_t) =
-  fprintf ppf "class %s\n{\npublic:\n" struc.struc.name;
+let print_struct_decl pr (struc : struct_t) =
+  println pr "class %s" struc.struc.name;
+  println pr "{";
+  println pr "public:";
   List.iter struc.members ~f:(fun v ->
       match v.v.type_ with
       | Void -> ()
       | _ ->
-          print_indent 1 ppf;
-          pr_vardecl ppf v.v;
-          pr_array_dims ppf v.dims;
-          pp_print_string ppf ";\n");
+          print_indent pr 1;
+          pr_vardecl pr.ppf v.v;
+          pr_array_dims pr.ppf v.dims;
+          println pr ";");
   if
     (not (Array.is_empty struc.struc.members))
     && not (List.is_empty struc.methods)
-  then pp_print_string ppf "\n";
+  then print_newline pr;
   List.iter struc.methods ~f:(fun func ->
-      print_indent 1 ppf;
-      if String.equal func.name "0" then fprintf ppf "%s" struc.struc.name
-      else if String.equal func.name "1" then fprintf ppf "~%s" struc.struc.name
-      else fprintf ppf "%a %s" pr_type func.func.return_type func.name;
-      fprintf ppf "(%a);\n" (pr_param_list pr_vardecl)
+      print_indent pr 1;
+      if String.equal func.name "0" then fprintf pr.ppf "%s" struc.struc.name
+      else if String.equal func.name "1" then
+        fprintf pr.ppf "~%s" struc.struc.name
+      else fprintf pr.ppf "%a %s" pr_type func.func.return_type func.name;
+      println pr "(%a);" (pr_param_list pr_vardecl)
         (Ain.Function.args func.func));
-  pp_print_string ppf "};\n"
+  println pr "};"
 
-let print_functype_decl ppf keyword (ft : Ain.FuncType.t) =
-  fprintf ppf "%s %a %s " keyword pr_type ft.return_type ft.name;
+let print_functype_decl pr keyword (ft : Ain.FuncType.t) =
+  fprintf pr.ppf "%s %a %s " keyword pr_type ft.return_type ft.name;
   match Ain.FuncType.args ft with
-  | [] -> fprintf ppf "(void);\n"
-  | args -> fprintf ppf "(%a);\n" (pr_param_list pr_vartype) args
+  | [] -> println pr "(void);"
+  | args -> println pr "(%a);" (pr_param_list pr_vartype) args
 
-let print_globals ppf (globals : variable list) =
+let print_globals pr (globals : variable list) =
   let groups =
     List.group globals ~break:(fun a b -> a.v.group_index <> b.v.group_index)
   in
   let print_group indent =
     List.iter ~f:(fun (v : variable) ->
-        print_indent indent ppf;
-        pr_vardecl ppf v.v;
-        pr_array_dims ppf v.dims;
-        pr_initval ppf v.v;
-        pp_print_string ppf ";\n")
+        print_indent pr indent;
+        pr_vardecl pr.ppf v.v;
+        pr_array_dims pr.ppf v.dims;
+        pr_initval pr.ppf v.v;
+        println pr ";")
   in
   List.iter groups ~f:(fun group ->
       match (List.hd_exn group).v.group_index with
       | -1 -> print_group 0 group
       | gindex ->
-          fprintf ppf "globalgroup %s\n{\n" Ain.ain.objg.(gindex);
+          println pr "globalgroup %s" Ain.ain.objg.(gindex);
+          println pr "{";
           print_group 1 group;
-          pp_print_string ppf "}\n")
+          println pr "}")
 
-let print_constants ppf =
-  pp_print_string ppf "const int true = 1;\n";
-  pp_print_string ppf "const int false = 0;\n\n"
+let print_constants pr =
+  println pr "const int true = 1;";
+  println pr "const int false = 0;";
+  print_newline pr
 
-let print_hll_function ppf (func : Ain.HLL.function_t) =
-  fprintf ppf "%a %s" pr_type func.return_type func.name;
+let print_hll_function pr (func : Ain.HLL.function_t) =
+  fprintf pr.ppf "%a %s" pr_type func.return_type func.name;
   match Ain.HLL.args func with
-  | [] -> fprintf ppf "(void);\n"
-  | args -> fprintf ppf "(%a);\n" (pr_param_list pr_vardecl) args
+  | [] -> println pr "(void);"
+  | args -> println pr "(%a);" (pr_param_list pr_vardecl) args
 
-let print_hll_inc ppf =
-  pp_print_string ppf "SystemSource = {\n";
+let print_hll_inc pr =
+  println pr "SystemSource = {";
   Array.iter Ain.ain.hll0 ~f:(fun hll ->
-      fprintf ppf "\t\"%s.hll\",\t\"%s\",\n" hll.name hll.name);
-  pp_print_string ppf "}\n"
+      println pr "\t\"%s.hll\",\t\"%s\"," hll.name hll.name);
+  println pr "}"
 
-let print_inc ppf srcs =
-  pp_print_string ppf "Source = {\n";
-  List.iter srcs ~f:(fun src -> fprintf ppf "\t\"%s\",\n" src);
-  pp_print_string ppf "}\n"
+let print_inc pr srcs =
+  println pr "Source = {";
+  List.iter srcs ~f:(fun src -> println pr "\t\"%s\"," src);
+  println pr "}"
 
 type project_t = { name : string }
 
-let print_pje ppf proj =
-  pp_print_string ppf "// Project Environment File\n";
-  fprintf ppf "ProjectName = \"%s\"\n" proj.name;
-  pp_print_newline ppf ();
-  fprintf ppf "CodeName = \"%s.ain\"\n" proj.name;
-  pp_print_newline ppf ();
-  fprintf ppf "#define _AINVERSION %d\n" Ain.ain.vers;
-  fprintf ppf "#define _KEYCODE 0x%08lX\n" Ain.ain.keyc;
-  fprintf ppf "#define _ISAI2FILE %B\n" Ain.ain.is_ai2;
+let print_pje pr proj =
+  println pr "// Project Environment File";
+  println pr "ProjectName = \"%s\"" proj.name;
+  print_newline pr;
+  println pr "CodeName = \"%s.ain\"" proj.name;
+  print_newline pr;
+  println pr "#define _AINVERSION %d" Ain.ain.vers;
+  println pr "#define _KEYCODE 0x%08lX" Ain.ain.keyc;
+  println pr "#define _ISAI2FILE %B" Ain.ain.is_ai2;
   if Ain.ain.vers >= 6 then
-    fprintf ppf "#define _USESMSG1 %B\n" (Option.is_some Ain.ain.msg1_uk);
-  fprintf ppf "#define _OPTIMIZE_IFTHEN %B\n" Ain.ain.ifthen_optimized;
-  pp_print_newline ppf ();
-  fprintf ppf "GameVersion = %ld\n" Ain.ain.gver;
-  pp_print_newline ppf ();
-  pp_print_string ppf "// Settings for each directory\n";
-  pp_print_string ppf "SourceDir = \".\"\n";
-  pp_print_string ppf "HLLDir = \"HLL\"\n";
-  pp_print_string ppf "ObjDir = \"OBJ\"\n";
-  pp_print_string ppf "OutputDir = \"Run\"\n";
-  pp_print_newline ppf ();
-  pp_print_string ppf "Source = {\n";
-  pp_print_string ppf "\t\"main.inc\",\n";
-  pp_print_string ppf "}\n"
+    println pr "#define _USESMSG1 %B" (Option.is_some Ain.ain.msg1_uk);
+  println pr "#define _OPTIMIZE_IFTHEN %B" Ain.ain.ifthen_optimized;
+  print_newline pr;
+  println pr "GameVersion = %ld" Ain.ain.gver;
+  print_newline pr;
+  println pr "// Settings for each directory";
+  println pr "SourceDir = \".\"";
+  println pr "HLLDir = \"HLL\"";
+  println pr "ObjDir = \"OBJ\"";
+  println pr "OutputDir = \"Run\"";
+  print_newline pr;
+  println pr "Source = {";
+  println pr "\t\"main.inc\",";
+  println pr "}"

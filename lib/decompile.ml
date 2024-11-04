@@ -132,7 +132,8 @@ let inspect_function (f : function_bytecode) ~print_addr =
   |> fun body ->
   Stdio.printf "\nDecompiled code:\n";
   CodeGen.(
-    print_function ~print_addr Stdlib.Format.std_formatter
+    print_function ~print_addr
+      (create_printer Stdlib.Format.std_formatter "")
       { func = f.func; struc; name; body })
 
 let group_by_source_file code =
@@ -257,38 +258,38 @@ let inspect funcname =
   | None -> failwith ("cannot find function " ^ funcname)
   | Some f -> inspect_function f
 
-let export decompiled ain_name output_to_formatter ~print_addr =
+let export decompiled ain_name output_to_printer ~print_addr =
   let sources = ref [] in
   let output_source fname f =
     sources := fname :: !sources;
-    output_to_formatter fname f
+    output_to_printer fname f
   in
-  output_source "constants.jaf" (fun ppf -> CodeGen.print_constants ppf);
-  output_source "classes.jaf" (fun ppf ->
+  output_source "constants.jaf" (fun pr -> CodeGen.print_constants pr);
+  output_source "classes.jaf" (fun pr ->
       Array.iter decompiled.structs ~f:(fun struc ->
-          CodeGen.print_struct_decl ppf struc;
-          Stdlib.Format.pp_print_string ppf "\n");
+          CodeGen.print_struct_decl pr struc;
+          CodeGen.print_newline pr);
       Array.iter Ain.ain.fnct ~f:(fun ft ->
-          CodeGen.print_functype_decl ppf "functype" ft);
+          CodeGen.print_functype_decl pr "functype" ft);
       Array.iter Ain.ain.delg ~f:(fun ft ->
-          CodeGen.print_functype_decl ppf "delegate" ft));
-  output_source "globals.jaf" (fun ppf ->
-      CodeGen.print_globals ppf decompiled.globals);
+          CodeGen.print_functype_decl pr "delegate" ft));
+  output_source "globals.jaf" (fun pr ->
+      CodeGen.print_globals pr decompiled.globals);
   Array.iter Ain.ain.hll0 ~f:(fun hll ->
-      output_to_formatter
+      output_to_printer
         ("HLL/" ^ hll.name ^ ".hll")
-        (fun ppf ->
+        (fun pr ->
           Array.iter hll.functions ~f:(fun func ->
-              CodeGen.print_hll_function ppf func)));
-  output_source "HLL\\hll.inc" (fun ppf -> CodeGen.print_hll_inc ppf);
+              CodeGen.print_hll_function pr func)));
+  output_source "HLL\\hll.inc" (fun pr -> CodeGen.print_hll_inc pr);
   List.iter decompiled.srcs ~f:(fun (fname, funcs) ->
       if not (List.is_empty funcs) then
-        output_source fname (fun ppf ->
+        output_source fname (fun pr ->
             List.iter funcs ~f:(fun func ->
-                CodeGen.print_function ~print_addr ppf func;
-                Stdlib.Format.pp_print_string ppf "\n")));
-  output_to_formatter "main.inc" (fun ppf ->
-      CodeGen.print_inc ppf (List.rev !sources));
+                CodeGen.print_function ~print_addr pr func;
+                CodeGen.print_newline pr)));
+  output_to_printer "main.inc" (fun pr ->
+      CodeGen.print_inc pr (List.rev !sources));
   let project_name = Stdlib.Filename.remove_extension ain_name in
-  output_to_formatter (project_name ^ ".pje") (fun ppf ->
-      CodeGen.(print_pje ppf { name = project_name }))
+  output_to_printer (project_name ^ ".pje") (fun pr ->
+      CodeGen.(print_pje pr { name = project_name }))

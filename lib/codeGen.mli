@@ -32,13 +32,16 @@ type struct_t = {
 }
 
 type project_t = { name : string }
+type printer
 
-val print_function : print_addr:bool -> Format.formatter -> function_t -> unit
-val print_struct_decl : Format.formatter -> struct_t -> unit
-val print_functype_decl : Format.formatter -> string -> Ain.FuncType.t -> unit
-val print_globals : Format.formatter -> variable list -> unit
-val print_constants : Format.formatter -> unit
-val print_hll_function : Format.formatter -> Ain.HLL.function_t -> unit
-val print_hll_inc : Format.formatter -> unit
-val print_inc : Format.formatter -> string list -> unit
-val print_pje : Format.formatter -> project_t -> unit
+val create_printer : Format.formatter -> string -> printer
+val print_newline : printer -> unit
+val print_function : print_addr:bool -> printer -> function_t -> unit
+val print_struct_decl : printer -> struct_t -> unit
+val print_functype_decl : printer -> string -> Ain.FuncType.t -> unit
+val print_globals : printer -> variable list -> unit
+val print_constants : printer -> unit
+val print_hll_function : printer -> Ain.HLL.function_t -> unit
+val print_hll_inc : printer -> unit
+val print_inc : printer -> string list -> unit
+val print_pje : printer -> project_t -> unit
