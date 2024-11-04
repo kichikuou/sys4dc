@@ -27,4 +27,5 @@
   core_unix
   ppx_deriving
   camlzip
+  yojson
   dune))

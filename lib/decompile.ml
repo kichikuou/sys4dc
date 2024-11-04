@@ -134,6 +134,7 @@ let inspect_function (f : function_bytecode) ~print_addr =
   CodeGen.(
     print_function ~print_addr
       (create_printer Stdlib.Format.std_formatter "")
+      (create_debug_info ())
       { func = f.func; struc; name; body })
 
 let group_by_source_file code =
@@ -264,6 +265,7 @@ let export decompiled ain_name output_to_printer ~print_addr =
     sources := fname :: !sources;
     output_to_printer fname f
   in
+  let dbginfo = CodeGen.create_debug_info () in
   output_source "constants.jaf" (fun pr -> CodeGen.print_constants pr);
   output_source "classes.jaf" (fun pr ->
       Array.iter decompiled.structs ~f:(fun struc ->
@@ -286,10 +288,11 @@ let export decompiled ain_name output_to_printer ~print_addr =
       if not (List.is_empty funcs) then
         output_source fname (fun pr ->
             List.iter funcs ~f:(fun func ->
-                CodeGen.print_function ~print_addr pr func;
+                CodeGen.print_function ~print_addr pr dbginfo func;
                 CodeGen.print_newline pr)));
   output_to_printer "main.inc" (fun pr ->
       CodeGen.print_inc pr (List.rev !sources));
   let project_name = Stdlib.Filename.remove_extension ain_name in
   output_to_printer (project_name ^ ".pje") (fun pr ->
-      CodeGen.(print_pje pr { name = project_name }))
+      CodeGen.(print_pje pr { name = project_name }));
+  output_to_printer "debug.json" (fun pr -> CodeGen.print_debug_info pr dbginfo)

@@ -32,11 +32,18 @@ type struct_t = {
 }
 
 type project_t = { name : string }
+type debug_info
+
+val create_debug_info : unit -> debug_info
+
 type printer
 
 val create_printer : Format.formatter -> string -> printer
 val print_newline : printer -> unit
-val print_function : print_addr:bool -> printer -> function_t -> unit
+
+val print_function :
+  print_addr:bool -> printer -> debug_info -> function_t -> unit
+
 val print_struct_decl : printer -> struct_t -> unit
 val print_functype_decl : printer -> string -> Ain.FuncType.t -> unit
 val print_globals : printer -> variable list -> unit
@@ -45,3 +52,4 @@ val print_hll_function : printer -> Ain.HLL.function_t -> unit
 val print_hll_inc : printer -> unit
 val print_inc : printer -> string list -> unit
 val print_pje : printer -> project_t -> unit
+val print_debug_info : printer -> debug_info -> unit

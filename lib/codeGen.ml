@@ -358,6 +358,35 @@ and pr_callable ppf = function
 
 and pr_arg_list ppf args = pp_print_list ~pp_sep:comma (pr_expr 0) ppf args
 
+type debug_mapping = { addr : int; src : int; line : int }
+
+type debug_info = {
+  mutable sources : string list;
+  mutable current_src : int;
+  mutable mappings : debug_mapping list;
+}
+
+let create_debug_info () = { sources = []; current_src = -1; mappings = [] }
+
+let add_debug_info dbginfo addr file line =
+  let src =
+    match dbginfo.sources with
+    | s :: _ when String.equal s file -> dbginfo.current_src
+    | _ ->
+        dbginfo.sources <- file :: dbginfo.sources;
+        dbginfo.current_src <- dbginfo.current_src + 1;
+        dbginfo.current_src
+  in
+  dbginfo.mappings <- { addr; src; line } :: dbginfo.mappings
+
+let debug_info_to_json dbginfo =
+  let sources = List.rev_map dbginfo.sources ~f:(fun s -> `String s) in
+  let mappings =
+    List.rev_map dbginfo.mappings ~f:(fun { addr; src; line } ->
+        `List [ `Int addr; `Int src; `Int line ])
+  in
+  `Assoc [ ("sources", `List sources); ("mappings", `List mappings) ]
+
 type printer = { ppf : Format.formatter; file : string; mutable line : int }
 
 let create_printer ppf file = { ppf; file; line = 1 }
@@ -369,8 +398,9 @@ let print_newline pr =
 let print_indent pr n = pp_print_string pr.ppf (String.make n '\t')
 let println pr fmt = kfprintf (fun _ -> print_newline pr) pr.ppf fmt
 
-let print_function ~print_addr pr (func : function_t) =
+let print_function ~print_addr pr dbginfo (func : function_t) =
   let addr_and_indent addr indent =
+    if addr > 0 then add_debug_info dbginfo addr pr.file pr.line;
     if print_addr then fprintf pr.ppf "/* %08x */" addr;
     print_indent pr indent
   in
@@ -634,3 +664,7 @@ let print_pje pr proj =
   println pr "Source = {";
   println pr "\t\"main.inc\",";
   println pr "}"
+
+let print_debug_info pr dbginfo =
+  let json = debug_info_to_json dbginfo in
+  Yojson.Basic.pretty_print pr.ppf json
