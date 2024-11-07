@@ -20,11 +20,6 @@ open Loc
 
 type ast_transform = statement loc -> statement loc
 
-let block = function
-  | [] -> { txt = Block []; addr = -1 }
-  | [ stmt ] -> stmt
-  | stmts -> { txt = Block stmts; addr = (List.last_exn stmts).addr }
-
 let rename_labels stmt =
   let targets = ref [] in
   walk_statement stmt ~f:(function
@@ -36,9 +31,9 @@ let rename_labels stmt =
     |> List.mapi ~f:(fun i addr -> (addr, i))
     |> Hashtbl.of_alist_exn (module Int)
   in
-  let rec update { txt; addr } =
-    let txt' =
-      match txt with
+  let rec update stmt =
+    let txt =
+      match stmt.txt with
       | Label (Address addr) -> (
           match Hashtbl.find targets addr with
           | Some i -> Label (Address i)
@@ -52,13 +47,13 @@ let rename_labels stmt =
           |> List.filter ~f:(function
                | { txt = Block []; _ } -> false
                | _ -> true)
-          |> block)
+          |> make_block)
             .txt
       | Switch (id, e, stmt) -> Switch (id, e, update stmt)
       | Goto (addr, x) -> Goto (Hashtbl.find_exn targets addr, x)
       | stmt -> stmt
     in
-    { txt = txt'; addr }
+    { stmt with txt }
   in
   update stmt
 
@@ -68,12 +63,14 @@ let recover_loop_initializer stmt =
     | s1 :: ({ txt = For (None, None, None, _); _ } as s2) :: right ->
         (* Do not transform loops where both cond and inc are empty. *)
         reduce (s2 :: s1 :: left) right
-    | { txt = Expression (AssignOp _ as init); addr }
-      :: { txt = For (None, cond, inc, body); _ }
+    | { txt = Expression (AssignOp _ as init); addr; _ }
+      :: { txt = For (None, cond, inc, body); end_addr; _ }
       :: right ->
-        reduce ({ txt = For (Some init, cond, inc, body); addr } :: left) right
-    | { txt = VarDecl (var, Some (inst, expr)); addr }
-      :: { txt = For (None, cond, inc, body); _ }
+        reduce
+          ({ txt = For (Some init, cond, inc, body); addr; end_addr } :: left)
+          right
+    | { txt = VarDecl (var, Some (inst, expr)); addr; _ }
+      :: { txt = For (None, cond, inc, body); end_addr; _ }
       :: right ->
         reduce
           ({
@@ -84,24 +81,25 @@ let recover_loop_initializer stmt =
                    inc,
                    body );
              addr;
+             end_addr;
            }
-          :: { txt = VarDecl (var, None); addr }
+          :: { txt = VarDecl (var, None); addr; end_addr = addr }
           :: left)
           right
     | stmt :: right -> reduce (stmt :: left) right
   in
   map_block stmt ~f:(fun stmts -> reduce [] (List.rev stmts))
 
-let remove_redundant_return { txt; addr } =
+let remove_redundant_return stmt =
   {
+    stmt with
     txt =
-      (match txt with
+      (match stmt.txt with
       | Block ({ txt = Return None; _ } :: stmts) -> Block stmts
       | Block ({ txt = Return _; _ } :: ({ txt = Return _; _ } :: _ as stmts))
         ->
           Block stmts
       | stmt -> stmt);
-    addr;
   }
 
 let remove_implicit_array_free stmt =
@@ -134,17 +132,17 @@ let remove_implicit_array_free stmt =
     remove_free vars stmts
   in
   match stmt with
-  | { txt = Block stmts; addr } ->
-      { txt = Block (List.map stmts ~f:(map_block ~f:process_block)); addr }
+  | { txt = Block stmts; _ } ->
+      { stmt with txt = Block (List.map stmts ~f:(map_block ~f:process_block)) }
   | stmt -> map_block stmt ~f:process_block
 
 let remove_array_initializer_call = function
-  | { txt = Block stmts; addr } -> (
+  | { txt = Block stmts; _ } as stmt -> (
       match List.rev stmts with
       | { txt = Expression (Call (Method (Page StructPage, f), [])); _ } :: rest
         when String.is_suffix f.name ~suffix:"@2" ->
-          { txt = Block (List.rev rest); addr }
-      | _ -> { txt = Block stmts; addr })
+          { stmt with txt = Block (List.rev rest) }
+      | _ -> stmt)
   | stmt -> stmt
 
 let remove_dummy_variable_assignment stmt =
@@ -187,10 +185,10 @@ let remove_vardecl_default_rhs stmt =
 let fold_newline_func_to_msg stmt =
   let rec reduce left = function
     | [] -> left
-    | { txt = Msg (m, None); addr }
-      :: { txt = Expression (Call _ as e); _ }
+    | { txt = Msg (m, None); addr; _ }
+      :: { txt = Expression (Call _ as e); end_addr; _ }
       :: right ->
-        reduce ({ txt = Msg (m, Some e); addr } :: left) right
+        reduce ({ txt = Msg (m, Some e); addr; end_addr } :: left) right
     | stmt :: right -> reduce (stmt :: left) right
   in
   map_block stmt ~f:(fun stmts -> reduce [] (List.rev stmts))

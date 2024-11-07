@@ -34,7 +34,7 @@ type function_bytecode = {
 let rec parse_function func_id parent code =
   let lambdas = ref [] in
   let rec aux acc = function
-    | { addr = end_addr; txt = ENDFUNC n } :: tl ->
+    | { addr = end_addr; txt = ENDFUNC n; _ } :: tl ->
         if n <> func_id then
           Printf.failwithf "Unexpected ENDFUNC %d at 0x%x (ENDFUNC %d expected)"
             n end_addr func_id ()
@@ -52,12 +52,12 @@ let rec parse_function func_id parent code =
         lambdas := lambda :: !lambdas;
         (* Remove JUMP over the lambda *)
         match (acc, code) with
-        | ( { addr = addr1; txt = JUMP addr2 } :: acc_tl,
-            { addr = addr2'; txt = insn } :: code_tl )
+        | ( { addr = addr1; txt = JUMP addr2; _ } :: acc_tl,
+            { addr = addr2'; end_addr; txt = insn } :: code_tl )
           when addr2 = addr2' ->
-            aux acc_tl ({ addr = addr1; txt = insn } :: code_tl)
+            aux acc_tl ({ addr = addr1; end_addr; txt = insn } :: code_tl)
         | _, _ -> Printf.failwithf "No JUMP that skips %s" lambda.func.name ())
-    | { addr = end_addr; txt = FUNC _ | EOF _ } :: _ as code ->
+    | { addr = end_addr; txt = FUNC _ | EOF _; _ } :: _ as code ->
         (* constructors are missing ENDFUNCs. *)
         ( {
             func = Ain.ain.func.(func_id);
@@ -192,9 +192,11 @@ let rec insert_func acc next_fno = function
   | ({ addr; _ } as hd) :: tl
     when next_fno < Array.length Ain.ain.func
          && addr = Ain.ain.func.(next_fno).address ->
-      insert_func (hd :: { addr; txt = FUNC next_fno } :: acc) (next_fno + 1) tl
+      insert_func
+        (hd :: { addr; end_addr = addr; txt = FUNC next_fno } :: acc)
+        (next_fno + 1) tl
   | hd :: tl -> insert_func (hd :: acc) next_fno tl
-  | [] -> List.rev ({ addr = -1; txt = EOF 0 } :: acc)
+  | [] -> List.rev ({ addr = -1; end_addr = -1; txt = EOF 0 } :: acc)
 
 let preprocess_ain_v0 code =
   if Ain.ain.vers = 0 then (

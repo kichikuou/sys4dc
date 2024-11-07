@@ -27,6 +27,8 @@ type terminator =
   | DoWhile0 of int (* addr of branching basic block *)
 [@@deriving show { with_path = false }]
 
+let seq_terminator = { txt = Seq; addr = -1; end_addr = -1 }
+
 type fragment = terminator loc * Ast.statement loc list
 [@@deriving show { with_path = false }]
 
@@ -63,7 +65,9 @@ let branch_target = function
 let make_basic_blocks func_end_addr code =
   let head_addrs = Hashtbl.create (module Int) in
   let add d labels addr =
-    let labels = List.map labels ~f:(fun label -> { txt = label; addr }) in
+    let labels =
+      List.map labels ~f:(fun label -> { txt = label; addr; end_addr = addr })
+    in
     Hashtbl.update head_addrs addr ~f:(function
       | None -> (d, labels)
       | Some (n, labels') -> (n + d, labels @ labels'))
@@ -102,7 +106,7 @@ let make_basic_blocks func_end_addr code =
   in
   add_and_scan code;
   let rec aux acc = function
-    | { addr; txt = inst } :: tl ->
+    | (inst : instruction loc) :: tl ->
         let insts, rest =
           List.split_while tl ~f:(function { addr; _ } ->
               not (Hashtbl.mem head_addrs addr))
@@ -110,13 +114,13 @@ let make_basic_blocks func_end_addr code =
         let end_addr =
           match rest with { addr; _ } :: _ -> addr | [] -> func_end_addr
         in
-        let nr_jump_srcs, labels = Hashtbl.find_exn head_addrs addr in
+        let nr_jump_srcs, labels = Hashtbl.find_exn head_addrs inst.addr in
         let basic_block =
           {
-            addr;
+            addr = inst.addr;
             end_addr;
             labels;
-            code = { addr; txt = inst } :: insts;
+            code = inst :: insts;
             nr_jump_srcs;
           }
         in
@@ -131,6 +135,7 @@ type analyze_context = {
   parent : Ain.Function.t option;
   mutable instructions : instruction loc list;
   mutable address : int;
+  mutable end_address : int;
   mutable stack : expr list;
   mutable stmts : statement loc list;
 }
@@ -141,6 +146,9 @@ let fetch_instruction ctx =
   | inst :: tl ->
       ctx.instructions <- tl;
       inst.txt
+
+let current_address ctx =
+  match ctx.instructions with hd :: _ -> hd.addr | [] -> ctx.end_address
 
 let push ctx expr = ctx.stack <- expr :: ctx.stack
 let pushl ctx exprs = ctx.stack <- List.rev_append exprs ctx.stack
@@ -179,8 +187,9 @@ let assert_stack_empty ctx =
         ([%show: expr list] stack)
 
 let emit_statement ctx stmt =
-  ctx.stmts <- { addr = ctx.address; txt = stmt } :: ctx.stmts;
-  ctx.address <- (match ctx.instructions with hd :: _ -> hd.addr | [] -> -1)
+  let end_addr = current_address ctx in
+  ctx.stmts <- { addr = ctx.address; end_addr; txt = stmt } :: ctx.stmts;
+  ctx.address <- end_addr
 
 let emit_expression ctx expr =
   assert_stack_empty ctx;
@@ -484,7 +493,8 @@ let analyze ctx =
   let terminator = ref None in
   let set_terminator term =
     assert (List.is_empty ctx.instructions);
-    terminator := Some { txt = term; addr = ctx.address }
+    terminator :=
+      Some { txt = term; addr = ctx.address; end_addr = current_address ctx }
   in
   while not (List.is_empty ctx.instructions) do
     match fetch_instruction ctx with
@@ -1077,7 +1087,7 @@ let analyze ctx =
     | insn ->
         Printf.failwithf "Unknown instruction %s" (show_instruction insn) ()
   done;
-  ( Option.value !terminator ~default:{ txt = Seq; addr = -1 },
+  ( Option.value !terminator ~default:seq_terminator,
     take_stack ctx,
     take_stmts ctx )
 
@@ -1096,6 +1106,7 @@ let rec analyze_basic_blocks ctx stack = function
   | bb :: rest ->
       ctx.instructions <- bb.code;
       ctx.address <- bb.addr;
+      ctx.end_address <- bb.end_addr;
       let fragment = analyze ctx in
       let stack = { bb with code = fragment } :: stack in
       reduce ctx stack rest
@@ -1153,7 +1164,7 @@ and reduce ctx stack rest =
         {
           top with
           end_addr;
-          code = ({ txt = Seq; addr = -1 }, TernaryOp (a, b, c) :: estack, stmts);
+          code = (seq_terminator, TernaryOp (a, b, c) :: estack, stmts);
         }
       in
       reduce ctx (top' :: stack') rest
@@ -1175,7 +1186,7 @@ and reduce ctx stack rest =
               top with
               end_addr = label3;
               code =
-                ( { txt = Seq; addr = -1 },
+                ( seq_terminator,
                   TernaryOp (a, UnaryOp (ITOF, b), c) :: estack,
                   stmts );
             }
@@ -1195,14 +1206,14 @@ and reduce ctx stack rest =
       analyze_basic_blocks { ctx with stack = []; stmts = [] } stack' rest
 
 let rec replace_delegate_calls acc = function
-  | { addr = addr1; txt = DG_CALLBEGIN dg_type }
-    :: { addr = addr2; txt = DG_CALL (dg_type', addr4) }
-    :: { addr = addr3; txt = JUMP addr2' as jump_op }
+  | { addr = addr1; txt = DG_CALLBEGIN dg_type; _ }
+    :: { addr = addr2; txt = DG_CALL (dg_type', addr4); _ }
+    :: { addr = addr3; txt = JUMP addr2' as jump_op; end_addr }
     :: rest
     when dg_type = dg_type' && addr2 = addr2'
          && addr4 = addr3 + Instructions.width jump_op ->
       replace_delegate_calls
-        ({ addr = addr1; txt = PSEUDO_DG_CALL dg_type } :: acc)
+        ({ addr = addr1; end_addr; txt = PSEUDO_DG_CALL dg_type } :: acc)
         rest
   | insn :: rest -> replace_delegate_calls (insn :: acc) rest
   | [] -> List.rev acc
@@ -1216,6 +1227,7 @@ let create code end_addr func struc parent =
          parent;
          instructions = [];
          address = -1;
+         end_address = -1;
          stack = [];
          stmts = [];
        }
@@ -1256,7 +1268,7 @@ let generate_var_decls (func : Ain.Function.t) bbs =
   in
   List.map bbs ~f:(function { code = terminator, stmts; _ } as bb ->
       let stmts' =
-        List.rev_map (List.rev stmts) ~f:(fun { addr; txt = stmt } ->
-            { addr; txt = replace_stmt stmt })
+        List.rev_map (List.rev stmts) ~f:(fun stmt ->
+            { stmt with txt = replace_stmt stmt.txt })
       in
       { bb with code = (terminator, stmts') })

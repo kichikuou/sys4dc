@@ -416,7 +416,10 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
         addr_and_indent stmt.addr indent;
         println pr "{";
         print_stmt_list (indent + 1) (List.rev stmts);
-        addr_and_indent 0 indent;
+        let end_addr =
+          match stmts with [] -> stmt.end_addr | s :: _ -> s.end_addr
+        in
+        addr_and_indent end_addr indent;
         println pr "}"
     | Expression expr ->
         addr_and_indent stmt.addr indent;
@@ -457,19 +460,15 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
           (match stmt1.txt with
           | Block stmts -> List.rev stmts
           | _ -> [ stmt1 ]);
+        addr_and_indent stmt1.end_addr indent;
+        println pr "}";
         match stmt2.txt with
-        | Block [] ->
-            addr_and_indent 0 indent;
-            println pr "}"
+        | Block [] -> ()
         | IfElse _ ->
-            addr_and_indent 0 indent;
-            println pr "}";
             addr_and_indent stmt2.addr indent;
             pp_print_string pr.ppf "else ";
             print_stmt indent true stmt2
         | _ ->
-            addr_and_indent 0 indent;
-            println pr "}";
             addr_and_indent stmt2.addr indent;
             println pr "else";
             addr_and_indent stmt2.addr indent;
@@ -478,16 +477,16 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
               (match stmt2.txt with
               | Block stmts -> List.rev stmts
               | _ -> [ stmt2 ]);
-            addr_and_indent 0 indent;
+            addr_and_indent stmt2.end_addr indent;
             println pr "}")
     | Switch (_, expr, body) ->
         addr_and_indent stmt.addr indent;
         println pr "switch (%a)" (pr_expr 0) expr;
-        addr_and_indent 0 indent;
+        addr_and_indent body.addr indent;
         println pr "{";
         print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        addr_and_indent 0 indent;
+        addr_and_indent body.end_addr indent;
         println pr "}"
     | While (cond, body) ->
         addr_and_indent stmt.addr indent;
@@ -496,7 +495,7 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
         println pr "{";
         print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        addr_and_indent 0 indent;
+        addr_and_indent body.end_addr indent;
         println pr "}"
     | DoWhile (body, cond) ->
         addr_and_indent stmt.addr indent;
@@ -518,7 +517,7 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
         println pr "{";
         print_stmt_list (indent + 1)
           (match body.txt with Block stmts -> List.rev stmts | _ -> [ body ]);
-        addr_and_indent 0 indent;
+        addr_and_indent body.end_addr indent;
         println pr "}"
     | Label label ->
         addr_and_indent stmt.addr (indent - 1);
@@ -559,7 +558,7 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
   let body =
     match func.body.txt with
     | Block _ -> func.body
-    | _ -> { txt = Block [ func.body ]; addr = func.body.addr }
+    | _ -> { func.body with txt = Block [ func.body ] }
   in
   print_stmt 0 false body
 

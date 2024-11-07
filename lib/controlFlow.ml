@@ -82,32 +82,26 @@ end
 
 let negate = function UnaryOp (NOT, e) -> e | e -> UnaryOp (NOT, e)
 
-let block = function
-  | [] -> { txt = Block []; addr = -1 }
-  | [ stmt ] -> stmt
-  | stmts -> { txt = Block stmts; addr = (List.last_exn stmts).addr }
-
 let add_labels labels stmts =
   if List.is_empty labels then stmts
   else
-    stmts @ List.map labels ~f:(fun l -> { txt = Label l.txt; addr = l.addr })
+    stmts
+    @ List.map labels ~f:(fun l ->
+          { txt = Label l.txt; addr = l.addr; end_addr = l.addr })
 
 let decrement_nr_jump_srcs bb n = bb.nr_jump_srcs <- bb.nr_jump_srcs - n
 
 let remove_jump bb =
   match bb with
   | { code = { txt = Jump _; _ }, stmts; _ } ->
-      {
-        bb with
-        code = ({ txt = Seq; addr = -1 }, stmts);
-        end_addr = bb.end_addr - 6;
-      }
+      { bb with code = (seq_terminator, stmts); end_addr = bb.end_addr - 6 }
   | _ -> failwith "no Jump terminator to remove"
 
 let rec stmt_list_to_expr = function
-  | [ { txt = Expression e; addr } ] -> { txt = e; addr }
-  | { txt = Expression e; addr } :: stmts ->
-      { txt = BinaryOp (PSEUDO_COMMA, (stmt_list_to_expr stmts).txt, e); addr }
+  | [ ({ txt = Expression e; _ } as stmt) ] -> { stmt with txt = e }
+  | { txt = Expression e; end_addr; _ } :: stmts ->
+      let lhs = stmt_list_to_expr stmts in
+      { txt = BinaryOp (PSEUDO_COMMA, lhs.txt, e); addr = lhs.addr; end_addr }
   | stmts ->
       Printf.failwithf "Cannot convert statement %s to an expression"
         (show_statement (Block stmts))
@@ -117,8 +111,8 @@ let do_collapse bbs =
   List.concat_map (List.rev bbs) ~f:(fun bb ->
       let stmts =
         match bb.code with
-        | { txt = Jump label; addr }, stmts ->
-            { txt = Goto (label, bb.end_addr); addr } :: stmts
+        | ({ txt = Jump label; _ } as term), stmts ->
+            { term with txt = Goto (label, bb.end_addr) } :: stmts
         | { txt = Seq; _ }, stmts -> stmts
         | _ ->
             Printf.failwithf "Cannot convert basic block to statement: %s"
@@ -127,11 +121,12 @@ let do_collapse bbs =
       in
       let labels =
         if bb.nr_jump_srcs > List.length bb.labels then
-          { txt = Address bb.addr; addr = bb.addr } :: bb.labels
+          { txt = Address bb.addr; addr = bb.addr; end_addr = bb.addr }
+          :: bb.labels
         else bb.labels
       in
       add_labels labels stmts)
-  |> block
+  |> make_block
 
 let recover_else (cfg : CFG.t) =
   (if Ain.ain.ifthen_optimized then
@@ -152,11 +147,12 @@ let recover_else (cfg : CFG.t) =
                        },
                        { txt = Block []; _ } );
                  addr;
+                 _;
                }
                :: stmts );
            _;
          } ->
-           Some { txt = (cond, label, then_block, stmts); addr }
+           Some (addr, cond, label, then_block, stmts)
        | {
            code =
              ( { txt = Seq; _ },
@@ -165,11 +161,12 @@ let recover_else (cfg : CFG.t) =
                    IfElse
                      (cond, { txt = Goto (label, _); _ }, { txt = Block []; _ });
                  addr;
+                 _;
                }
                :: stmts );
            _;
          } ->
-           Some { txt = (cond, label, [], stmts); addr }
+           Some (addr, cond, label, [], stmts)
        | _ -> None
      in
      let rec scan node =
@@ -177,7 +174,7 @@ let recover_else (cfg : CFG.t) =
        | None -> ()
        | Some bb -> (
            match match_if bb with
-           | Some { txt = cond, addr, then_block, stmts; addr = ifaddr } ->
+           | Some (ifaddr, cond, addr, then_block, stmts) ->
                if addr = region_end_addr then (
                  let else_stmt =
                    CFG.splice_to_list cfg (CFG.next cfg node) None
@@ -187,10 +184,11 @@ let recover_else (cfg : CFG.t) =
                    {
                      bb with
                      code =
-                       ( { txt = Seq; addr = -1 },
+                       ( seq_terminator,
                          {
-                           txt = IfElse (cond, block then_block, else_stmt);
+                           txt = IfElse (cond, make_block then_block, else_stmt);
                            addr = ifaddr;
+                           end_addr = else_stmt.end_addr;
                          }
                          :: stmts );
                      end_addr = region_end_addr;
@@ -211,10 +209,12 @@ let recover_else (cfg : CFG.t) =
                      {
                        bb with
                        code =
-                         ( { txt = Seq; addr = -1 },
+                         ( seq_terminator,
                            {
-                             txt = IfElse (cond, block then_block, else_stmt);
+                             txt =
+                               IfElse (cond, make_block then_block, else_stmt);
                              addr = ifaddr;
+                             end_addr = else_stmt.end_addr;
                            }
                            :: stmts );
                        end_addr = target_bb.addr;
@@ -244,10 +244,7 @@ let generate_break_continue record cfg =
     | Expression _ -> stmt
     | Label _ -> stmt
     | IfElse (e, stmt1, stmt2) ->
-        {
-          txt = IfElse (e, replace_stmt stmt1, replace_stmt stmt2);
-          addr = stmt.addr;
-        }
+        { stmt with txt = IfElse (e, replace_stmt stmt1, replace_stmt stmt2) }
     | While _ -> stmt
     | DoWhile _ -> stmt
     | For _ -> stmt
@@ -256,17 +253,16 @@ let generate_break_continue record cfg =
     | Goto (addr, _) ->
         if addr = record.continue_addr then (
           record.nr_continues <- record.nr_continues + 1;
-          { txt = Continue; addr = stmt.addr })
+          { stmt with txt = Continue })
         else if addr = record.break_addr then (
           record.nr_breaks <- record.nr_breaks + 1;
-          { txt = Break; addr = stmt.addr })
+          { stmt with txt = Break })
         else stmt
     | Return _ -> stmt
     | ScenarioJump _ -> stmt
     | Msg _ -> stmt
     | Assert _ -> stmt
-    | Block stmts ->
-        { txt = Block (List.map stmts ~f:replace_stmt); addr = stmt.addr }
+    | Block stmts -> { stmt with txt = Block (List.map stmts ~f:replace_stmt) }
     | Switch (id, e, body) ->
         if record.continue_addr = -1 then stmt
         else
@@ -274,25 +270,25 @@ let generate_break_continue record cfg =
           record.break_addr <- -1;
           let body = replace_stmt body in
           record.break_addr <- break_addr_orig;
-          { txt = Switch (id, e, body); addr = stmt.addr }
+          { stmt with txt = Switch (id, e, body) }
   in
   let replace_bb bb =
     match bb with
-    | { code = { txt = Jump target; addr }, stmts; _ } ->
+    | { code = ({ txt = Jump target; _ } as term), stmts; _ } ->
         let stmts = List.map stmts ~f:replace_stmt in
         if target = record.continue_addr then (
           record.nr_continues <- record.nr_continues + 1;
           {
             bb with
-            code = ({ txt = Seq; addr = -1 }, { txt = Continue; addr } :: stmts);
+            code = (seq_terminator, { term with txt = Continue } :: stmts);
           })
         else if target = record.break_addr then (
           record.nr_breaks <- record.nr_breaks + 1;
           {
             bb with
-            code = ({ txt = Seq; addr = -1 }, { txt = Break; addr } :: stmts);
+            code = (seq_terminator, { term with txt = Break } :: stmts);
           })
-        else { bb with code = ({ txt = Jump target; addr }, stmts) }
+        else { bb with code = ({ term with txt = Jump target }, stmts) }
     | { code = terminator, stmts; _ } ->
         { bb with code = (terminator, List.map stmts ~f:replace_stmt) }
   in
@@ -309,11 +305,11 @@ let generate_break_continue record cfg =
 (* True if there's a break/continue statement that is not nested in a while/for/switch *)
 let rec has_break_continue cfg begin_node end_node =
   let rec test_stmt stmt =
-    match stmt.txt with
+    match stmt with
     | VarDecl _ -> false
     | Expression _ -> false
     | Label _ -> false
-    | IfElse (_, stmt1, stmt2) -> test_stmt stmt1 || test_stmt stmt2
+    | IfElse (_, stmt1, stmt2) -> test_stmt stmt1.txt || test_stmt stmt2.txt
     | While (_, _) -> false
     | DoWhile (_, _) -> false
     | For (_, _, _, _) -> false
@@ -324,13 +320,13 @@ let rec has_break_continue cfg begin_node end_node =
     | ScenarioJump _ -> false
     | Msg _ -> false
     | Assert _ -> false
-    | Block stmts -> List.exists stmts ~f:test_stmt
+    | Block stmts -> List.exists stmts ~f:(fun { txt; _ } -> test_stmt txt)
     | Switch (_, _, _) -> false
   in
   if CFG.node_equal begin_node end_node then false
   else
     let { code = _, stmts; _ } = CFG.value_exn begin_node in
-    test_stmt { txt = Block stmts; addr = -1 }
+    test_stmt (Block stmts)
     || has_break_continue cfg (CFG.next cfg begin_node) end_node
 
 (* Returns true if any variable is declared between block_begin and block_end
@@ -347,11 +343,11 @@ let has_escaping_vars cfg block_begin block_end =
     CFG.iterate cfg block_end None (fun bb ->
         (match bb with
         | { code = { txt = Seq | Jump _ | DoWhile0 _; _ }, stmts; _ } -> stmts
-        | { code = { txt = Branch (_, e); addr }, stmts; _ } ->
-            { txt = Expression e; addr } :: stmts
-        | { code = { txt = Switch0 (_, e); addr }, stmts; _ } ->
-            { txt = Expression e; addr } :: stmts)
-        |> block
+        | { code = ({ txt = Branch (_, e); _ } as term), stmts; _ } ->
+            { term with txt = Expression e } :: stmts
+        | { code = ({ txt = Switch0 (_, e); _ } as term), stmts; _ } ->
+            { term with txt = Expression e } :: stmts)
+        |> make_block
         |> Ast.walk ~lvalue_cb:(function
              | PageRef (_, v) when Stdlib.List.memq v !vars -> result := true
              | _ -> ()));
@@ -396,9 +392,8 @@ let recover_forever_loop (cfg : CFG.t) =
               target_bb with
               end_addr = bb.end_addr;
               code =
-                ( { txt = Seq; addr = -1 },
-                  [ { txt = For (None, None, None, body); addr = body.addr } ]
-                );
+                ( seq_terminator,
+                  [ { body with txt = For (None, None, None, body) } ] );
             };
           scan (CFG.next cfg new_node)
     | Some _ -> scan (CFG.next cfg node)
@@ -420,7 +415,7 @@ let reduce_switch cfg node0 =
   let bb0 = CFG.value_exn node0 in
   let bb1 = CFG.value_exn node1 in
   match (bb0, bb1) with
-  | ( { code = { txt = Switch0 (id, expr); addr = switch_addr }, stmts0; _ },
+  | ( { code = { txt = Switch0 (id, expr); addr = switch_addr; _ }, stmts0; _ },
       { code = { txt = Jump switch_end_addr; _ }, []; _ } ) ->
       let body_head = CFG.next cfg node1 in
       let body_end =
@@ -440,7 +435,7 @@ let reduce_switch cfg node0 =
           {
             addr = switch_end_addr;
             end_addr = switch_end_addr;
-            code = ({ txt = Seq; addr = -1 }, []);
+            code = (seq_terminator, []);
             labels = case_labels;
             nr_jump_srcs = List.length case_labels;
           }
@@ -461,8 +456,13 @@ let reduce_switch cfg node0 =
         {
           bb0 with
           code =
-            ( { txt = Seq; addr = -1 },
-              { txt = Switch (id, expr, body); addr = switch_addr } :: stmts0 );
+            ( seq_terminator,
+              {
+                txt = Switch (id, expr, body);
+                addr = switch_addr;
+                end_addr = body.end_addr;
+              }
+              :: stmts0 );
           end_addr = switch_end_addr;
         };
       CFG.set body_end
@@ -481,7 +481,8 @@ let reduce_if_then cfg node0 branch_target =
   let bb0 = CFG.value_exn node0 in
   match bb0 with
   | {
-   code = { txt = Branch (branch_target_addr, expr); addr = cond_addr }, stmts0;
+   code =
+     { txt = Branch (branch_target_addr, expr); addr = cond_addr; _ }, stmts0;
    _;
   } ->
       let then_stmt =
@@ -491,10 +492,15 @@ let reduce_if_then cfg node0 branch_target =
         {
           (CFG.value_exn node0) with
           code =
-            ( { txt = Seq; addr = -1 },
+            ( seq_terminator,
               {
-                txt = IfElse (expr, then_stmt, { txt = Block []; addr = -1 });
+                txt =
+                  IfElse
+                    ( expr,
+                      then_stmt,
+                      { txt = Block []; addr = -1; end_addr = -1 } );
                 addr = cond_addr;
+                end_addr = then_stmt.end_addr;
               }
               :: stmts0 );
           end_addr = branch_target_addr;
@@ -518,7 +524,7 @@ let reduce_backward_branch cfg nodek branch_target =
     {
       addr = bb0.addr;
       end_addr = bb0.addr;
-      code = ({ txt = DoWhile0 bbk.addr; addr = -1 }, []);
+      code = ({ txt = DoWhile0 bbk.addr; addr = -1; end_addr = -1 }, []);
       labels = [];
       nr_jump_srcs = 0;
     }
@@ -532,8 +538,8 @@ let reduce_do_while cfg marker_node =
       let bb0 = CFG.value_exn node0 in
       let bbk = CFG.value_exn nodek in
       match bbk with
-      | { code = { txt = Branch (_, expr); addr = expr_addr }, stmts0; _ } ->
-          CFG.set nodek { bbk with code = ({ txt = Seq; addr = -1 }, stmts0) };
+      | { code = ({ txt = Branch (_, expr); _ } as term), stmts0; _ } ->
+          CFG.set nodek { bbk with code = (seq_terminator, stmts0) };
           let body =
             CFG.splice cfg node0 (CFG.next cfg nodek)
             |> generate_break_continue
@@ -548,12 +554,12 @@ let reduce_do_while cfg marker_node =
             {
               bb0 with
               code =
-                ( { txt = Seq; addr = -1 },
+                ( seq_terminator,
                   [
                     {
-                      txt =
-                        DoWhile (body, { txt = negate expr; addr = expr_addr });
+                      txt = DoWhile (body, { term with txt = negate expr });
                       addr = body.addr;
+                      end_addr = bbk.end_addr;
                     };
                   ] );
               end_addr = bbk.end_addr;
@@ -568,7 +574,8 @@ let reduce_forward_branch cfg node0 branch_target =
   match (bb0, CFG.value node_before_branch_target) with
   | ( {
         code =
-          { txt = Branch (branch_target_addr, expr); addr = expr_addr }, stmts0;
+          ( { txt = Branch (branch_target_addr, expr); addr = expr_addr; _ },
+            stmts0 );
         _;
       },
       Some
@@ -584,10 +591,15 @@ let reduce_forward_branch cfg node0 branch_target =
           {
             bb0 with
             code =
-              ( { txt = Seq; addr = -1 },
+              ( seq_terminator,
                 {
-                  txt = IfElse (expr, then_stmt, { txt = Block []; addr = -1 });
+                  txt =
+                    IfElse
+                      ( expr,
+                        then_stmt,
+                        { txt = Block []; addr = -1; end_addr = -1 } );
                   addr = expr_addr;
+                  end_addr = branch_target_addr;
                 }
                 :: stmts0 );
             end_addr = branch_target_addr;
@@ -617,10 +629,11 @@ let reduce_forward_branch cfg node0 branch_target =
             {
               bb0 with
               code =
-                ( { txt = Seq; addr = -1 },
+                ( seq_terminator,
                   {
                     txt = IfElse (expr, then_stmt, else_stmt);
                     addr = expr_addr;
+                    end_addr = else_end_addr;
                   }
                   :: stmts0 );
               end_addr = else_end_addr;
@@ -643,8 +656,14 @@ let reduce_forward_branch cfg node0 branch_target =
           {
             bb0 with
             code =
-              ( { txt = Seq; addr = -1 },
-                [ { txt = While (expr, body); addr = expr_addr } ] );
+              ( seq_terminator,
+                [
+                  {
+                    txt = While (expr, body);
+                    addr = expr_addr;
+                    end_addr = branch_target_addr;
+                  };
+                ] );
             end_addr = branch_target_addr;
             nr_jump_srcs = bb0.nr_jump_srcs - 1;
           };
@@ -692,11 +711,12 @@ let reduce_forward_branch cfg node0 branch_target =
               {
                 bb0 with
                 code =
-                  ( { txt = Seq; addr = -1 },
+                  ( seq_terminator,
                     [
                       {
                         txt = For (None, Some expr, inc_expr, body);
                         addr = expr_addr;
+                        end_addr = branch_target_addr;
                       };
                     ] );
                 nr_jump_srcs = bb0.nr_jump_srcs - 1;
@@ -766,9 +786,13 @@ let reduce_jump cfg node0 =
               bb0 with
               end_addr = break_addr;
               code =
-                ( { txt = Seq; addr = -1 },
+                ( seq_terminator,
                   [
-                    { txt = For (None, None, inc_expr, body); addr = for_addr };
+                    {
+                      txt = For (None, None, inc_expr, body);
+                      addr = for_addr;
+                      end_addr = break_addr;
+                    };
                   ] );
               nr_jump_srcs = bb0.nr_jump_srcs - 1;
             };
@@ -803,7 +827,7 @@ let analyze bbs =
     {
       addr = end_addr;
       end_addr;
-      code = ({ txt = Seq; addr = -1 }, []);
+      code = (seq_terminator, []);
       labels = [];
       nr_jump_srcs = 0;
     }

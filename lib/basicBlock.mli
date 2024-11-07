@@ -24,6 +24,8 @@ type terminator =
   | DoWhile0 of int (* addr of branching basic block *)
 [@@deriving show { with_path = false }]
 
+val seq_terminator : terminator loc
+
 (* A piece of code held in a basic block. It consists of a sequence of
    statements followed by a terminator instruction. *)
 type fragment = terminator loc * Ast.statement loc list

@@ -14,4 +14,5 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
-type 'a loc = { txt : 'a; addr : int } [@@deriving show { with_path = false }]
+type 'a loc = { txt : 'a; addr : int; end_addr : int }
+[@@deriving show { with_path = false }]

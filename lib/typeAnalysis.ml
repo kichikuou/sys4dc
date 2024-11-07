@@ -337,10 +337,11 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     | None -> None
     | Some e -> Some (fst (analyze_expr expected e))
   in
-  let rec analyze_statement { txt = stmt; addr } =
+  let rec analyze_statement stmt =
     {
+      stmt with
       txt =
-        (match stmt with
+        (match stmt.txt with
         | VarDecl (var, None) -> VarDecl (var, None)
         | VarDecl (var, Some (insn, expr)) ->
             let expr', _ = analyze_expr var.type_ expr in
@@ -362,9 +363,9 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         | While (cond, stmt) ->
             let cond', _ = analyze_expr Bool cond in
             While (cond', analyze_statement stmt)
-        | DoWhile (stmt, { txt = cond; addr }) ->
-            let cond', _ = analyze_expr Bool cond in
-            DoWhile (analyze_statement stmt, { txt = cond'; addr })
+        | DoWhile (stmt, cond) ->
+            let txt, _ = analyze_expr Bool cond.txt in
+            DoWhile (analyze_statement stmt, { cond with txt })
         | Switch (id, expr, stmt) ->
             let expr', _ = analyze_expr Any expr in
             Switch (id, expr', analyze_statement stmt)
@@ -388,7 +389,6 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         | Assert expr ->
             let expr', _ = analyze_expr Bool expr in
             Assert expr');
-      addr;
     }
   in
   analyze_statement stmt
