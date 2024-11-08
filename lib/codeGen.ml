@@ -385,7 +385,12 @@ let debug_info_to_json dbginfo =
     List.rev_map dbginfo.mappings ~f:(fun { addr; src; line } ->
         `List [ `Int addr; `Int src; `Int line ])
   in
-  `Assoc [ ("sources", `List sources); ("mappings", `List mappings) ]
+  `Assoc
+    [
+      ("version", `String "alpha-1");
+      ("sources", `List sources);
+      ("mappings", `List mappings);
+    ]
 
 type printer = { ppf : Format.formatter; file : string; mutable line : int }
 
@@ -665,5 +670,4 @@ let print_pje pr proj =
   println pr "}"
 
 let print_debug_info pr dbginfo =
-  let json = debug_info_to_json dbginfo in
-  Yojson.Basic.pretty_print pr.ppf json
+  debug_info_to_json dbginfo |> Yojson.Basic.to_string |> pp_print_string pr.ppf

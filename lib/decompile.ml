@@ -297,4 +297,5 @@ let export decompiled ain_name output_to_printer ~print_addr =
   let project_name = Stdlib.Filename.remove_extension ain_name in
   output_to_printer (project_name ^ ".pje") (fun pr ->
       CodeGen.(print_pje pr { name = project_name }));
-  output_to_printer "debug.json" (fun pr -> CodeGen.print_debug_info pr dbginfo)
+  output_to_printer "debug_info.json" (fun pr ->
+      CodeGen.print_debug_info pr dbginfo)
