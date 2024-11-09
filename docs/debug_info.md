@@ -29,7 +29,7 @@ Each mapping entry is an array of three integers:
 The `mappings` array maintains some ordering guarantees to enable efficient
 binary search:
 
-1. Bytecode addresses (first element) are in non-decreasing order
+1. Bytecode addresses (first element) are in strictly increasing order
 2. Source file indices (second element) are in non-decreasing order
 3. Line numbers (third element) are in strictly increasing order for same
    source file

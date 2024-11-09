@@ -377,7 +377,13 @@ let add_debug_info dbginfo addr file line =
         dbginfo.current_src <- dbginfo.current_src + 1;
         dbginfo.current_src
   in
-  dbginfo.mappings <- { addr; src; line } :: dbginfo.mappings
+  (* If multiple lines are mapped to the same address, discard all but the last line *)
+  dbginfo.mappings <-
+    { addr; src; line }
+    ::
+    (match dbginfo.mappings with
+    | hd :: tl when hd.addr = addr -> tl
+    | _ -> dbginfo.mappings)
 
 let debug_info_to_json dbginfo =
   let sources = List.rev_map dbginfo.sources ~f:(fun s -> `String s) in
