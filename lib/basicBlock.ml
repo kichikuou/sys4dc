@@ -1105,7 +1105,8 @@ let rec analyze_basic_blocks ctx stack = function
       |> List.rev
   | bb :: rest ->
       ctx.instructions <- bb.code;
-      ctx.address <- (match List.hd ctx.stmts with None -> bb.addr | Some s -> s.end_addr);
+      ctx.address <-
+        (match List.hd ctx.stmts with None -> bb.addr | Some s -> s.end_addr);
       ctx.end_address <- bb.end_addr;
       let fragment = analyze ctx in
       let stack = { bb with code = fragment } :: stack in

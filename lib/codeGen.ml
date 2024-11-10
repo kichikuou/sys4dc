@@ -14,8 +14,8 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
-open Core
-open Format
+open Base
+open Stdlib.Format
 open Loc
 open Type
 open Ast
@@ -80,12 +80,12 @@ let escape_map = [ ('\t', 't'); ('\r', 'r'); ('\n', 'n'); ('\x00', '0') ]
 let escape_sq =
   String.Escaping.escape_gen_exn ~escape_char:'\\'
     ~escapeworthy_map:(('\'', '\'') :: escape_map)
-  |> unstage
+  |> Staged.unstage
 
 let escape_dq =
   String.Escaping.escape_gen_exn ~escape_char:'\\'
     ~escapeworthy_map:(('"', '"') :: escape_map)
-  |> unstage
+  |> Staged.unstage
 
 let pr_char ppf c =
   if UtfSjis.is_sjis c then (
@@ -398,7 +398,7 @@ let debug_info_to_json dbginfo =
       ("mappings", `List mappings);
     ]
 
-type printer = { ppf : Format.formatter; file : string; mutable line : int }
+type printer = { ppf : formatter; file : string; mutable line : int }
 
 let create_printer ppf file = { ppf; file; line = 1 }
 

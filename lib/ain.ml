@@ -14,7 +14,7 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
-open Core
+open Base
 module BR = BytesReader
 
 type reader_context = { mutable version : int }
@@ -448,7 +448,9 @@ let decode bytes =
   | _ -> failwith "unrecognized .ain format"
 
 let load path =
-  let bytes, is_ai2 = Bytes.of_string (In_channel.read_all path) |> decode in
+  let bytes, is_ai2 =
+    Bytes.of_string (Stdio.In_channel.read_all path) |> decode
+  in
   ain.is_ai2 <- is_ai2;
   readSections (BR.create bytes { version = -1 });
   applyGSET ain
