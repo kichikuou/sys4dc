@@ -30,15 +30,6 @@
   yojson
   dune
   ; doubly-linked dependencies
-  (ppx_compare
-   (and
-    (>= v0.17)
-    (< v0.18)))
-  (ppx_sexp_conv
-   (and
-    (>= v0.17)
-    (< v0.18)))
-  (sexplib
-   (and
-    (>= v0.17)
-    (< v0.18)))))
+  ppx_compare
+  ppx_sexp_conv
+  sexplib))
