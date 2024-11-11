@@ -24,7 +24,6 @@
   ocaml
   base
   core
-  core_unix
   ppx_deriving
   camlzip
   cmdliner

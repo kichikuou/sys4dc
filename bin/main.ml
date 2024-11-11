@@ -18,6 +18,14 @@ open Cmdliner
 open Core
 open Sys4dc
 
+let rec mkdir_p path =
+  if not (Stdlib.Sys.file_exists path) then (
+    let parent = Filename.dirname path in
+    if not (String.equal parent path) then mkdir_p parent;
+    Stdlib.Sys.mkdir path 0o755)
+  else if not (Stdlib.Sys.is_directory path) then
+    failwith (path ^ " exists but is not a directory")
+
 let output_printer_getter out_dir_opt fname f =
   match out_dir_opt with
   | None ->
@@ -28,7 +36,7 @@ let output_printer_getter out_dir_opt fname f =
       let fname_components = String.split fname ~on:'\\' in
       let unix_fname = String.concat ~sep:"/" fname_components in
       let output_path = Filename.of_parts (out_dir :: fname_components) in
-      Core_unix.mkdir_p (Filename.dirname output_path);
+      mkdir_p (Filename.dirname output_path);
       let outc = Out_channel.create output_path in
       let ppf = Format.formatter_of_out_channel outc in
       f (CodeGen.create_printer ppf unix_fname);
