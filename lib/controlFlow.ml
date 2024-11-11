@@ -21,7 +21,7 @@ open Instructions
 open BasicBlock
 
 module CFG = struct
-  module L = Core.Doubly_linked
+  module L = Doubly_linked
 
   type t = fragment basic_block L.t
 

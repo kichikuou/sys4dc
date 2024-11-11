@@ -23,9 +23,13 @@
  (depends
   ocaml
   base
-  core
+  stdio
   ppx_deriving
   camlzip
   cmdliner
   yojson
-  dune))
+  dune
+  ; doubly-linked dependencies
+  ppx_compare
+  ppx_sexp_conv
+  sexplib))
