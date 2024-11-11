@@ -14,6 +14,7 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
+open Cmdliner
 open Core
 open Sys4dc
 
@@ -34,24 +35,41 @@ let output_printer_getter out_dir_opt fname f =
       Format.pp_print_flush ppf ();
       Out_channel.close outc
 
-let command =
-  Command.basic ~summary:"Decompile an .ain file"
-    (let%map_open.Command output_dir =
-       flag "-o" (optional string) ~doc:"directory Output directory"
-     and inspect_function =
-       flag "-inspect" (optional string)
-         ~doc:"function Inspect the decompilation process of a function"
-     and print_addr = flag "-address" no_arg ~doc:" Print addresses"
-     and ain_file = anon ("ain-file" %: string) in
-     fun () ->
-       Ain.load ain_file;
-       match inspect_function with
-       | None ->
-           let decompiled = Decompile.decompile () in
-           Decompile.export decompiled
-             (Filename.basename ain_file)
-             (output_printer_getter output_dir)
-             ~print_addr
-       | Some funcname -> Decompile.inspect funcname ~print_addr)
+let sys4dc output_dir inspect_function print_addr ain_file =
+  Ain.load ain_file;
+  match inspect_function with
+  | None ->
+      let decompiled = Decompile.decompile () in
+      Decompile.export decompiled
+        (Filename.basename ain_file)
+        (output_printer_getter output_dir)
+        ~print_addr
+  | Some funcname -> Decompile.inspect funcname ~print_addr
 
-let () = Command_unix.run command
+let cmd =
+  let doc = "Decompile an .ain file" in
+  let info = Cmd.info "sys4dc" ~doc in
+  let output_dir =
+    let doc = "Output directory" in
+    let docv = "DIRECTORY" in
+    Cmdliner.Arg.(value & opt (some string) None & info [ "o" ] ~docv ~doc)
+  in
+  let inspect_function =
+    let doc = "Inspect the decompilation process of a function" in
+    let docv = "FUNCTION" in
+    Cmdliner.Arg.(
+      value & opt (some string) None & info [ "inspect" ] ~docv ~doc)
+  in
+  let print_addr =
+    let doc = "Print addresses" in
+    Cmdliner.Arg.(value & flag & info [ "address" ] ~doc)
+  in
+  let ain_file =
+    let doc = "The .ain file to decompile" in
+    let docv = "AIN_FILE" in
+    Cmdliner.Arg.(required & pos 0 (some string) None & info [] ~docv ~doc)
+  in
+  Cmd.v info
+    Term.(const sys4dc $ output_dir $ inspect_function $ print_addr $ ain_file)
+
+let () = exit (Cmd.eval cmd)
