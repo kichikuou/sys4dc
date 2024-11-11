@@ -1,4 +1,4 @@
 (executable
  (public_name sys4dc)
  (name main)
- (libraries sys4dc cmdliner core))
+ (libraries sys4dc base cmdliner))

@@ -14,13 +14,13 @@
  * along with this program; if not, see <http://gnu.org/licenses/>.
  *)
 
+open Base
 open Cmdliner
-open Core
 open Sys4dc
 
 let rec mkdir_p path =
   if not (Stdlib.Sys.file_exists path) then (
-    let parent = Filename.dirname path in
+    let parent = Stdlib.Filename.dirname path in
     if not (String.equal parent path) then mkdir_p parent;
     Stdlib.Sys.mkdir path 0o755)
   else if not (Stdlib.Sys.is_directory path) then
@@ -29,18 +29,18 @@ let rec mkdir_p path =
 let output_printer_getter out_dir_opt fname f =
   match out_dir_opt with
   | None ->
-      let ppf = Format.std_formatter in
-      Format.fprintf ppf "FILE %s\n\n" fname;
+      let ppf = Stdlib.Format.std_formatter in
+      Stdlib.Format.fprintf ppf "FILE %s\n\n" fname;
       f (CodeGen.create_printer ppf "")
   | Some out_dir ->
       let fname_components = String.split fname ~on:'\\' in
       let unix_fname = String.concat ~sep:"/" fname_components in
-      let output_path = Filename.of_parts (out_dir :: fname_components) in
-      mkdir_p (Filename.dirname output_path);
-      let outc = Out_channel.create output_path in
-      let ppf = Format.formatter_of_out_channel outc in
+      let output_path = Stdlib.Filename.concat out_dir unix_fname in
+      mkdir_p (Stdlib.Filename.dirname output_path);
+      let outc = Stdio.Out_channel.create output_path in
+      let ppf = Stdlib.Format.formatter_of_out_channel outc in
       f (CodeGen.create_printer ppf unix_fname);
-      Format.pp_print_flush ppf ();
+      Stdlib.Format.pp_print_flush ppf ();
       Out_channel.close outc
 
 let sys4dc output_dir inspect_function print_addr ain_file =
@@ -49,7 +49,7 @@ let sys4dc output_dir inspect_function print_addr ain_file =
   | None ->
       let decompiled = Decompile.decompile () in
       Decompile.export decompiled
-        (Filename.basename ain_file)
+        (Stdlib.Filename.basename ain_file)
         (output_printer_getter output_dir)
         ~print_addr
   | Some funcname -> Decompile.inspect funcname ~print_addr
@@ -80,4 +80,4 @@ let cmd =
   Cmd.v info
     Term.(const sys4dc $ output_dir $ inspect_function $ print_addr $ ain_file)
 
-let () = exit (Cmd.eval cmd)
+let () = Stdlib.exit (Cmd.eval cmd)
