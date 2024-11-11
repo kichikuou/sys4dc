@@ -9,11 +9,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
         ocaml-compiler:
           - 4.14
           - 5
+        exclude:
+          # Ocaml 4 + Core does not build on Windows
+          - os: windows-latest
+            ocaml-compiler: 4.14
 
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -29,3 +36,26 @@ jobs:
 
       - name: Build
         run: opam exec -- dune build
+
+      - name: Copy the build artifact
+        shell: bash
+        env:
+          SHELLOPTS: igncr  # https://github.com/ocaml/setup-ocaml/issues/815
+        run: |
+          mkdir -p dist/sys4dc
+          cp _build/default/bin/main.exe dist/sys4dc/sys4dc${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+          cp README.md COPYING dist/sys4dc/
+
+      - name: Copy DLLs
+        shell: bash
+        if: matrix.os == 'windows-latest'
+        env:
+          SHELLOPTS: igncr  # https://github.com/ocaml/setup-ocaml/issues/815
+        run: |
+          cp "${CYGWIN_ROOT}/usr/x86_64-w64-mingw32/sys-root/mingw/bin/zlib1.dll" dist/sys4dc/
+
+      - name: Upload the build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sys4dc-${{ matrix.os }}-${{ matrix.ocaml-compiler }}
+          path: dist
