@@ -10,7 +10,7 @@ To build and install `sys4dc` from source code, you need to have OCaml and opam
 installed. Then, run the following commands:
 
 ```sh
-$ git clone https://github.com/kichikuou/sys4dc.git
+$ git clone --recursive https://github.com/kichikuou/sys4dc.git
 $ cd sys4dc
 $ opam install . --deps-only
 $ dune build
