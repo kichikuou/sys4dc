@@ -177,61 +177,6 @@ let operator insn =
   | op ->
       Printf.failwithf "cannot print operator for %s" (show_instruction op) ()
 
-let rec pr_type oc = function
-  | Any -> failwith "unresolved type"
-  | Char -> failwith "variables cannot have Char type"
-  | Int -> print_string oc "int"
-  | Float -> print_string oc "float"
-  | String -> print_string oc "string"
-  | Bool -> print_string oc "bool"
-  | LongInt -> print_string oc "lint"
-  | Void -> print_string oc "void"
-  | Struct n ->
-      print_string oc (if n < 0 then "struct" else Ain.ain.strt.(n).name)
-  | Array _ as t ->
-      print_string oc "array@";
-      let base, rank = Type.array_base_and_rank t in
-      pr_type oc base;
-      pr_array_rank oc rank
-  | Ref t ->
-      print_string oc "ref ";
-      pr_type oc t
-  | IMainSystem -> print_string oc "IMainSystem"
-  | FuncType ftv -> (
-      match Type.TypeVar.get_value ftv with
-      | Id (n, _) -> print_string oc Ain.ain.fnct.(n).name
-      | Type t ->
-          (* Output the first functype matching the inferred type *)
-          let ft =
-            Array.find_exn Ain.ain.fnct ~f:(fun ft ->
-                Poly.(t = Ain.FuncType.to_type ft))
-          in
-          print_string oc ft.name
-      | Var ->
-          Stdio.eprintf "Warning: unknown functype\n";
-          print_string oc "functype")
-  | StructMember _ -> failwith "cannot happen"
-  | Delegate dtv -> (
-      match Type.TypeVar.get_value dtv with
-      | Id (n, _) -> print_string oc Ain.ain.delg.(n).name
-      | Type t ->
-          (* Output the first delegate type matching the inferred type *)
-          let dt =
-            Array.find_exn Ain.ain.delg ~f:(fun ft ->
-                Poly.(t = Ain.FuncType.to_type ft))
-          in
-          print_string oc dt.name
-      | Var ->
-          Stdio.eprintf "Warning: unknown delegate type\n";
-          print_string oc "delegate")
-  | HllFunc2 -> print_string oc "hll_func2"
-  | HllParam -> print_string oc "hll_param"
-
-let pr_vartype oc (arg : Ain.Variable.t) = fprintf oc "%a" pr_type arg.type_
-
-let pr_vardecl oc (arg : Ain.Variable.t) =
-  fprintf oc "%a %s" pr_type arg.type_ arg.name
-
 let pr_param_list pr_var oc (params : Ain.Variable.t list) =
   let params =
     List.filter params ~f:(fun arg ->
@@ -413,6 +358,63 @@ let print_newline pr =
 let print_indent pr n = print_string pr.oc (String.make n '\t')
 let println pr fmt = kfprintf (fun _ -> print_newline pr) pr.oc fmt
 
+let rec pr_type pr oc = function
+  | Any -> failwith "unresolved type"
+  | Char -> failwith "variables cannot have Char type"
+  | Int -> print_string oc "int"
+  | Float -> print_string oc "float"
+  | String -> print_string oc "string"
+  | Bool -> print_string oc "bool"
+  | LongInt -> print_string oc "lint"
+  | Void -> print_string oc "void"
+  | Struct n ->
+      print_string oc (if n < 0 then "struct" else Ain.ain.strt.(n).name)
+  | Array _ as t ->
+      print_string oc "array@";
+      let base, rank = Type.array_base_and_rank t in
+      pr_type pr oc base;
+      pr_array_rank oc rank
+  | Ref t ->
+      print_string oc "ref ";
+      pr_type pr oc t
+  | IMainSystem -> print_string oc "IMainSystem"
+  | FuncType ftv -> (
+      match Type.TypeVar.get_value ftv with
+      | Id (n, _) -> print_string oc Ain.ain.fnct.(n).name
+      | Type t ->
+          (* Output the first functype matching the inferred type *)
+          let ft =
+            Array.find_exn Ain.ain.fnct ~f:(fun ft ->
+                Poly.(t = Ain.FuncType.to_type ft))
+          in
+          print_string oc ft.name
+      | Var ->
+          Stdio.eprintf "%s:%d Warning: unresolved functype\n" pr.file pr.line;
+          print_string oc "functype")
+  | StructMember _ -> failwith "cannot happen"
+  | Delegate dtv -> (
+      match Type.TypeVar.get_value dtv with
+      | Id (n, _) -> print_string oc Ain.ain.delg.(n).name
+      | Type t ->
+          (* Output the first delegate type matching the inferred type *)
+          let dt =
+            Array.find_exn Ain.ain.delg ~f:(fun ft ->
+                Poly.(t = Ain.FuncType.to_type ft))
+          in
+          print_string oc dt.name
+      | Var ->
+          Stdio.eprintf "%s:%d Warning: unresolved delegate type\n" pr.file
+            pr.line;
+          print_string oc "delegate")
+  | HllFunc2 -> print_string oc "hll_func2"
+  | HllParam -> print_string oc "hll_param"
+
+let pr_vartype pr oc (arg : Ain.Variable.t) =
+  fprintf oc "%a" (pr_type pr) arg.type_
+
+let pr_vardecl pr oc (arg : Ain.Variable.t) =
+  fprintf oc "%a %s" (pr_type pr) arg.type_ arg.name
+
 let print_function ~print_addr pr dbginfo (func : function_t) =
   let addr_and_indent addr indent =
     if addr > 0 then add_debug_info dbginfo addr pr.file pr.line;
@@ -456,16 +458,18 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
         println pr "goto label%d;" label
     | VarDecl (var, None) ->
         addr_and_indent stmt.addr indent;
-        println pr "%a;" pr_vardecl var
+        println pr "%a;" (pr_vardecl pr) var
     | VarDecl (var, Some (_, Call (Builtin (A_ALLOC, _), dims))) ->
         addr_and_indent stmt.addr indent;
-        println pr "%a%a;" pr_vardecl var
+        println pr "%a%a;" (pr_vardecl pr) var
           (pr_array_dims ~pr_expr:(pr_expr 0))
           dims
     | VarDecl (var, Some (insn, e)) ->
         let op = operator insn in
         addr_and_indent stmt.addr indent;
-        println pr "%a = %a;" pr_vardecl var (pr_expr ~parent_op:op op.rprec) e
+        println pr "%a = %a;" (pr_vardecl pr) var
+          (pr_expr ~parent_op:op op.rprec)
+          e
     | IfElse (expr, stmt1, stmt2) -> (
         if not in_else_if then addr_and_indent stmt.addr indent;
         println pr "if (%a)" (pr_expr 0) expr;
@@ -563,11 +567,15 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
           fprintf pr.oc "%s::%s" struc.name struc.name
         else if String.equal func.name "1" then
           fprintf pr.oc "%s::~%s" struc.name struc.name
-        else fprintf pr.oc "%a %s::%s" pr_type return_type struc.name func.name
+        else
+          fprintf pr.oc "%a %s::%s" (pr_type pr) return_type struc.name
+            func.name
     | None ->
         if func.func.is_label then fprintf pr.oc "#%s" func.name
-        else fprintf pr.oc "%a %s" pr_type return_type func.name);
-    println pr "(%a)" (pr_param_list pr_vardecl) (Ain.Function.args func.func)
+        else fprintf pr.oc "%a %s" (pr_type pr) return_type func.name);
+    println pr "(%a)"
+      (pr_param_list (pr_vardecl pr))
+      (Ain.Function.args func.func)
   in
   print_func_signature func;
   let body =
@@ -586,7 +594,7 @@ let print_struct_decl pr (struc : struct_t) =
       | Void -> ()
       | _ ->
           print_indent pr 1;
-          pr_vardecl pr.oc v.v;
+          pr_vardecl pr pr.oc v.v;
           pr_array_dims pr.oc v.dims;
           println pr ";");
   if
@@ -598,16 +606,17 @@ let print_struct_decl pr (struc : struct_t) =
       if String.equal func.name "0" then fprintf pr.oc "%s" struc.struc.name
       else if String.equal func.name "1" then
         fprintf pr.oc "~%s" struc.struc.name
-      else fprintf pr.oc "%a %s" pr_type func.func.return_type func.name;
-      println pr "(%a);" (pr_param_list pr_vardecl)
+      else fprintf pr.oc "%a %s" (pr_type pr) func.func.return_type func.name;
+      println pr "(%a);"
+        (pr_param_list (pr_vardecl pr))
         (Ain.Function.args func.func));
   println pr "};"
 
 let print_functype_decl pr keyword (ft : Ain.FuncType.t) =
-  fprintf pr.oc "%s %a %s " keyword pr_type ft.return_type ft.name;
+  fprintf pr.oc "%s %a %s " keyword (pr_type pr) ft.return_type ft.name;
   match Ain.FuncType.args ft with
   | [] -> println pr "(void);"
-  | args -> println pr "(%a);" (pr_param_list pr_vartype) args
+  | args -> println pr "(%a);" (pr_param_list (pr_vartype pr)) args
 
 let print_globals pr (globals : variable list) =
   let groups =
@@ -616,7 +625,7 @@ let print_globals pr (globals : variable list) =
   let print_group indent =
     List.iter ~f:(fun (v : variable) ->
         print_indent pr indent;
-        pr_vardecl pr.oc v.v;
+        pr_vardecl pr pr.oc v.v;
         pr_array_dims pr.oc v.dims;
         pr_initval pr.oc v.v;
         println pr ";")
@@ -636,10 +645,10 @@ let print_constants pr =
   print_newline pr
 
 let print_hll_function pr (func : Ain.HLL.function_t) =
-  fprintf pr.oc "%a %s" pr_type func.return_type func.name;
+  fprintf pr.oc "%a %s" (pr_type pr) func.return_type func.name;
   match Ain.HLL.args func with
   | [] -> println pr "(void);"
-  | args -> println pr "(%a);" (pr_param_list pr_vardecl) args
+  | args -> println pr "(%a);" (pr_param_list (pr_vardecl pr)) args
 
 let print_hll_inc pr =
   println pr "SystemSource = {";
