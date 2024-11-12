@@ -133,7 +133,7 @@ let inspect_function (f : function_bytecode) ~print_addr =
   Stdio.printf "\nDecompiled code:\n";
   CodeGen.(
     print_function ~print_addr
-      (create_printer Stdlib.Format.std_formatter "")
+      (create_printer Stdio.stdout "")
       (create_debug_info ())
       { func = f.func; struc; name; body })
 

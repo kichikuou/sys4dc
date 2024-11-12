@@ -38,7 +38,7 @@ val create_debug_info : unit -> debug_info
 
 type printer
 
-val create_printer : Format.formatter -> string -> printer
+val create_printer : out_channel -> string -> printer
 val print_newline : printer -> unit
 
 val print_function :

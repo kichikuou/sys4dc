@@ -29,18 +29,15 @@ let rec mkdir_p path =
 let output_printer_getter out_dir_opt fname f =
   match out_dir_opt with
   | None ->
-      let ppf = Stdlib.Format.std_formatter in
-      Stdlib.Format.fprintf ppf "FILE %s\n\n" fname;
-      f (CodeGen.create_printer ppf "")
+      Stdio.printf "FILE %s\n\n" fname;
+      f (CodeGen.create_printer Stdio.stdout "")
   | Some out_dir ->
       let fname_components = String.split fname ~on:'\\' in
       let unix_fname = String.concat ~sep:"/" fname_components in
       let output_path = Stdlib.Filename.concat out_dir unix_fname in
       mkdir_p (Stdlib.Filename.dirname output_path);
       let outc = Stdio.Out_channel.create output_path in
-      let ppf = Stdlib.Format.formatter_of_out_channel outc in
-      f (CodeGen.create_printer ppf unix_fname);
-      Stdlib.Format.pp_print_flush ppf ();
+      f (CodeGen.create_printer outc unix_fname);
       Out_channel.close outc
 
 let sys4dc output_dir inspect_function print_addr ain_file =

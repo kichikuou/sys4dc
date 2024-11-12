@@ -15,7 +15,7 @@
  *)
 
 open Base
-open Stdlib.Format
+open Stdlib.Printf
 open Loc
 open Type
 open Ast
@@ -59,12 +59,16 @@ let _ = (min_op_prec, max_op_prec, op_prec_of_enum)
 
 type op_associativity = Left | Right
 
-let prec_value p = op_prec_to_enum p * 2
-let comma ppf _ = fprintf ppf ", "
-let open_paren prec op_prec ppf = if prec > op_prec then pp_print_string ppf "("
+let print_string = Out_channel.output_string
 
-let close_paren prec op_prec ppf =
-  if prec > op_prec then pp_print_string ppf ")"
+let print_list sep f pr l =
+  List.iteri l ~f:(fun i x ->
+      if i > 0 then print_string pr sep;
+      f pr x)
+
+let prec_value p = op_prec_to_enum p * 2
+let open_paren prec op_prec oc = if prec > op_prec then print_string oc "("
+let close_paren prec op_prec oc = if prec > op_prec then print_string oc ")"
 
 let format_float x =
   let s = Printf.sprintf "%f" x in
@@ -87,36 +91,36 @@ let escape_dq =
     ~escapeworthy_map:(('"', '"') :: escape_map)
   |> Staged.unstage
 
-let pr_char ppf c =
+let pr_char oc c =
   if UtfSjis.is_sjis c then (
     let buf = Buffer.create 2 in
     Buffer.add_char buf (Char.of_int_exn (c land 0xff));
     if c > 0xff then Buffer.add_char buf (Char.of_int_exn (c lsr 8));
-    fprintf ppf "'%s'" (escape_sq (UtfSjis.sjis2utf (Buffer.contents buf))))
-  else fprintf ppf "%d" c
+    fprintf oc "'%s'" (escape_sq (UtfSjis.sjis2utf (Buffer.contents buf))))
+  else fprintf oc "%d" c
 
 let strip_class_name s =
   match String.lsplit2 s ~on:'@' with None -> s | Some (_, right) -> right
 
-let pr_array_rank ppf rank = if rank > 1 then fprintf ppf "%@%d" rank
+let pr_array_rank oc rank = if rank > 1 then fprintf oc "%@%d" rank
 
-let pr_number ppf = function
-  | Number n -> fprintf ppf "%ld" n
+let pr_number oc = function
+  | Number n -> fprintf oc "%ld" n
   | _ -> failwith "pr_number: non-number"
 
-let pr_array_dims ?(pr_expr = pr_number) ppf dims =
-  List.iter dims ~f:(fun e -> fprintf ppf "[%a]" pr_expr e)
+let pr_array_dims ?(pr_expr = pr_number) oc dims =
+  List.iter dims ~f:(fun e -> fprintf oc "[%a]" pr_expr e)
 
-let pr_initval ppf (v : Ain.Variable.t) =
+let pr_initval oc (v : Ain.Variable.t) =
   match v.init_val with
   | None -> ()
   | Some (Int n) -> (
       match v.type_ with
-      | Bool -> fprintf ppf " = %s" (if Int32.(n = 0l) then "false" else "true")
-      | Ref _ -> fprintf ppf " = %s" Ain.ain.glob.(Int32.to_int_exn n).name
-      | _ -> fprintf ppf " = %ld" n)
-  | Some (Float f) -> fprintf ppf " = %s" (format_float f)
-  | Some (Ain.Variable.String s) -> fprintf ppf " = \"%s\"" (escape_dq s)
+      | Bool -> fprintf oc " = %s" (if Int32.(n = 0l) then "false" else "true")
+      | Ref _ -> fprintf oc " = %s" Ain.ain.glob.(Int32.to_int_exn n).name
+      | _ -> fprintf oc " = %ld" n)
+  | Some (Float f) -> fprintf oc " = %s" (format_float f)
+  | Some (Ain.Variable.String s) -> fprintf oc " = \"%s\"" (escape_dq s)
 
 type operator = { sym : string; prec : int; lprec : int; rprec : int }
 
@@ -173,152 +177,152 @@ let operator insn =
   | op ->
       Printf.failwithf "cannot print operator for %s" (show_instruction op) ()
 
-let rec pr_type ppf = function
+let rec pr_type oc = function
   | Any -> failwith "unresolved type"
   | Char -> failwith "variables cannot have Char type"
-  | Int -> pp_print_string ppf "int"
-  | Float -> pp_print_string ppf "float"
-  | String -> pp_print_string ppf "string"
-  | Bool -> pp_print_string ppf "bool"
-  | LongInt -> pp_print_string ppf "lint"
-  | Void -> pp_print_string ppf "void"
+  | Int -> print_string oc "int"
+  | Float -> print_string oc "float"
+  | String -> print_string oc "string"
+  | Bool -> print_string oc "bool"
+  | LongInt -> print_string oc "lint"
+  | Void -> print_string oc "void"
   | Struct n ->
-      pp_print_string ppf (if n < 0 then "struct" else Ain.ain.strt.(n).name)
+      print_string oc (if n < 0 then "struct" else Ain.ain.strt.(n).name)
   | Array _ as t ->
-      pp_print_string ppf "array@";
+      print_string oc "array@";
       let base, rank = Type.array_base_and_rank t in
-      pr_type ppf base;
-      pr_array_rank ppf rank
+      pr_type oc base;
+      pr_array_rank oc rank
   | Ref t ->
-      pp_print_string ppf "ref ";
-      pr_type ppf t
-  | IMainSystem -> pp_print_string ppf "IMainSystem"
+      print_string oc "ref ";
+      pr_type oc t
+  | IMainSystem -> print_string oc "IMainSystem"
   | FuncType ftv -> (
       match Type.TypeVar.get_value ftv with
-      | Id (n, _) -> pp_print_string ppf Ain.ain.fnct.(n).name
+      | Id (n, _) -> print_string oc Ain.ain.fnct.(n).name
       | Type t ->
           (* Output the first functype matching the inferred type *)
           let ft =
             Array.find_exn Ain.ain.fnct ~f:(fun ft ->
                 Poly.(t = Ain.FuncType.to_type ft))
           in
-          pp_print_string ppf ft.name
+          print_string oc ft.name
       | Var ->
           Stdio.eprintf "Warning: unknown functype\n";
-          pp_print_string ppf "functype")
+          print_string oc "functype")
   | StructMember _ -> failwith "cannot happen"
   | Delegate dtv -> (
       match Type.TypeVar.get_value dtv with
-      | Id (n, _) -> pp_print_string ppf Ain.ain.delg.(n).name
+      | Id (n, _) -> print_string oc Ain.ain.delg.(n).name
       | Type t ->
           (* Output the first delegate type matching the inferred type *)
           let dt =
             Array.find_exn Ain.ain.delg ~f:(fun ft ->
                 Poly.(t = Ain.FuncType.to_type ft))
           in
-          pp_print_string ppf dt.name
+          print_string oc dt.name
       | Var ->
           Stdio.eprintf "Warning: unknown delegate type\n";
-          pp_print_string ppf "delegate")
-  | HllFunc2 -> pp_print_string ppf "hll_func2"
-  | HllParam -> pp_print_string ppf "hll_param"
+          print_string oc "delegate")
+  | HllFunc2 -> print_string oc "hll_func2"
+  | HllParam -> print_string oc "hll_param"
 
-let pr_vartype ppf (arg : Ain.Variable.t) = fprintf ppf "%a" pr_type arg.type_
+let pr_vartype oc (arg : Ain.Variable.t) = fprintf oc "%a" pr_type arg.type_
 
-let pr_vardecl ppf (arg : Ain.Variable.t) =
-  fprintf ppf "%a %s" pr_type arg.type_ arg.name
+let pr_vardecl oc (arg : Ain.Variable.t) =
+  fprintf oc "%a %s" pr_type arg.type_ arg.name
 
-let pr_param_list pr_var ppf (params : Ain.Variable.t list) =
+let pr_param_list pr_var oc (params : Ain.Variable.t list) =
   let params =
     List.filter params ~f:(fun arg ->
         match arg.type_ with Void -> false | _ -> true)
   in
-  pp_print_list ~pp_sep:comma pr_var ppf params
+  print_list ", " pr_var oc params
 
-let rec pr_lvalue prec ppf = function
-  | NullRef -> pp_print_string ppf "NULL"
-  | PageRef (StructPage, var) -> fprintf ppf "this.%s" var.name
-  | PageRef (_, var) -> pp_print_string ppf var.name
-  | RefRef lval -> pr_lvalue prec ppf lval
+let rec pr_lvalue prec oc = function
+  | NullRef -> print_string oc "NULL"
+  | PageRef (StructPage, var) -> fprintf oc "this.%s" var.name
+  | PageRef (_, var) -> print_string oc var.name
+  | RefRef lval -> pr_lvalue prec oc lval
   | ArrayRef (array, index) ->
-      fprintf ppf "%a[%a]"
+      fprintf oc "%a[%a]"
         (pr_expr (prec_value PREC_DOT))
         array (pr_expr 0) index
   | MemberRef (obj, memb) ->
-      fprintf ppf "%a.%s" (pr_expr (prec_value PREC_DOT)) obj memb.name
-  | RefValue e -> pr_expr (prec_value PREC_DOT) ppf e
+      fprintf oc "%a.%s" (pr_expr (prec_value PREC_DOT)) obj memb.name
+  | RefValue e -> pr_expr (prec_value PREC_DOT) oc e
   | ObjRef _ as lval ->
       failwith ("pr_lvalue: unresolved ObjRef " ^ show_lvalue lval)
   | IncDec (fix, op, lval) ->
       let op = incdec_op op in
-      open_paren prec op.prec ppf;
+      open_paren prec op.prec oc;
       (match fix with
-      | Prefix -> fprintf ppf "%s%a" op.sym (pr_lvalue prec) lval
-      | Postfix -> fprintf ppf "%a%s" (pr_lvalue prec) lval op.sym);
-      close_paren prec op.prec ppf
+      | Prefix -> fprintf oc "%s%a" op.sym (pr_lvalue prec) lval
+      | Postfix -> fprintf oc "%a%s" (pr_lvalue prec) lval op.sym);
+      close_paren prec op.prec oc
 
-and pr_expr ?parent_op prec ppf = function
-  | Number n -> fprintf ppf "%ld" n
-  | Boolean b -> pp_print_string ppf (if b then "true" else "false")
-  | Character c -> pr_char ppf (Int32.to_int_exn c)
-  | Float x -> pp_print_string ppf (format_float x)
-  | String s -> fprintf ppf "\"%s\"" (escape_dq s)
-  | FuncAddr f -> fprintf ppf "&%s" f.name
+and pr_expr ?parent_op prec oc = function
+  | Number n -> fprintf oc "%ld" n
+  | Boolean b -> print_string oc (if b then "true" else "false")
+  | Character c -> pr_char oc (Int32.to_int_exn c)
+  | Float x -> print_string oc (format_float x)
+  | String s -> fprintf oc "\"%s\"" (escape_dq s)
+  | FuncAddr f -> fprintf oc "&%s" f.name
   | MemberPointer (struc, slot) ->
-      fprintf ppf "&%s::%s" Ain.ain.strt.(struc).name
+      fprintf oc "&%s::%s" Ain.ain.strt.(struc).name
         Ain.ain.strt.(struc).members.(slot).name
   | BoundMethod (Number -1l, f) ->
-      fprintf ppf "&%s" (Ain.Function.parse_name f).name
+      fprintf oc "&%s" (Ain.Function.parse_name f).name
   | BoundMethod (expr, f) ->
-      fprintf ppf "&%a.%s"
+      fprintf oc "&%a.%s"
         (pr_expr (prec_value PREC_DOT))
         expr (Ain.Function.parse_name f).name
-  | Deref lval -> pr_lvalue prec ppf lval
-  | DerefRef lval -> pr_lvalue prec ppf lval
-  | New n -> fprintf ppf "new %s" Ain.ain.strt.(n).name
-  | DerefStruct (_, expr) -> pr_expr prec ppf expr
-  | Page StructPage -> pp_print_string ppf "this"
-  | Null -> pp_print_string ppf "NULL"
-  | Void -> pp_print_string ppf "<void>" (* FIXME *)
-  | UnaryOp (FTOI, expr) -> fprintf ppf "int(%a)" (pr_expr 0) expr
-  | UnaryOp (ITOF, expr) -> fprintf ppf "float(%a)" (pr_expr 0) expr
-  | UnaryOp (ITOLI, expr) -> fprintf ppf "lint(%a)" (pr_expr 0) expr
-  | UnaryOp (ITOB, Number 0l) -> pp_print_string ppf "false"
-  | UnaryOp (ITOB, Number 1l) -> pp_print_string ppf "true"
-  | UnaryOp (ITOB, expr) -> pr_expr prec ppf expr
+  | Deref lval -> pr_lvalue prec oc lval
+  | DerefRef lval -> pr_lvalue prec oc lval
+  | New n -> fprintf oc "new %s" Ain.ain.strt.(n).name
+  | DerefStruct (_, expr) -> pr_expr prec oc expr
+  | Page StructPage -> print_string oc "this"
+  | Null -> print_string oc "NULL"
+  | Void -> print_string oc "<void>" (* FIXME *)
+  | UnaryOp (FTOI, expr) -> fprintf oc "int(%a)" (pr_expr 0) expr
+  | UnaryOp (ITOF, expr) -> fprintf oc "float(%a)" (pr_expr 0) expr
+  | UnaryOp (ITOLI, expr) -> fprintf oc "lint(%a)" (pr_expr 0) expr
+  | UnaryOp (ITOB, Number 0l) -> print_string oc "false"
+  | UnaryOp (ITOB, Number 1l) -> print_string oc "true"
+  | UnaryOp (ITOB, expr) -> pr_expr prec oc expr
   | UnaryOp (STOI, expr) ->
-      fprintf ppf "%a.Int()" (pr_expr (prec_value PREC_DOT)) expr
-  | UnaryOp (I_STRING, expr) -> fprintf ppf "string(%a)" (pr_expr 0) expr
+      fprintf oc "%a.Int()" (pr_expr (prec_value PREC_DOT)) expr
+  | UnaryOp (I_STRING, expr) -> fprintf oc "string(%a)" (pr_expr 0) expr
   | UnaryOp (insn, expr) ->
       let op = operator insn in
-      open_paren prec op.prec ppf;
-      fprintf ppf "%s%a" op.sym (pr_expr op.rprec) expr;
-      close_paren prec op.prec ppf
+      open_paren prec op.prec oc;
+      fprintf oc "%s%a" op.sym (pr_expr op.rprec) expr;
+      close_paren prec op.prec oc
   | BinaryOp (insn, lhs, rhs) ->
       let op = operator insn in
-      pr_binary_op parent_op prec op ppf lhs rhs
+      pr_binary_op parent_op prec op oc lhs rhs
   | AssignOp (insn, lval, rhs) ->
       let op = operator insn in
-      pr_binary_op parent_op prec op ppf (Deref lval) rhs
+      pr_binary_op parent_op prec op oc (Deref lval) rhs
   | TernaryOp (expr1, expr2, expr3) ->
       let op_prec = prec_value PREC_QUESTION in
-      open_paren prec op_prec ppf;
-      fprintf ppf "%a ? %a : %a"
+      open_paren prec op_prec oc;
+      fprintf oc "%a ? %a : %a"
         (pr_expr (op_prec + 1))
         expr1
         (pr_expr (op_prec + 1))
         expr2 (pr_expr op_prec) expr3;
-      close_paren prec op_prec ppf
-  | Call (f, args) -> fprintf ppf "%a(%a)" pr_callable f pr_arg_list args
+      close_paren prec op_prec oc
+  | Call (f, args) -> fprintf oc "%a(%a)" pr_callable f pr_arg_list args
   | C_Ref (str, i) ->
-      fprintf ppf "%a[%a]" (pr_expr (prec_value PREC_DOT)) str (pr_expr 0) i
+      fprintf oc "%a[%a]" (pr_expr (prec_value PREC_DOT)) str (pr_expr 0) i
   | C_Assign (str, i, ch) ->
-      pr_binary_op parent_op prec (operator ASSIGN) ppf (C_Ref (str, i)) ch
+      pr_binary_op parent_op prec (operator ASSIGN) oc (C_Ref (str, i)) ch
   | e ->
-      eprintf "%a\n" pp_expr e;
+      eprintf "%s\n" (show_expr e);
       failwith "pr_expr: not implemented"
 
-and pr_binary_op parent_op prec op ppf lhs rhs =
+and pr_binary_op parent_op prec op oc lhs rhs =
   (* Match the AinDecompiler's parenthesizing rules. *)
   let prec' =
     match parent_op with
@@ -328,35 +332,35 @@ and pr_binary_op parent_op prec op ppf lhs rhs =
     | None -> prec
   in
   let space = if String.equal op.sym "," then "" else " " in
-  open_paren prec' op.prec ppf;
-  fprintf ppf "%a%s%s %a"
+  open_paren prec' op.prec oc;
+  fprintf oc "%a%s%s %a"
     (pr_expr ~parent_op:op op.lprec)
     lhs space op.sym
     (pr_expr ~parent_op:op op.rprec)
     rhs;
-  close_paren prec' op.prec ppf
+  close_paren prec' op.prec oc
 
-and pr_callable ppf = function
-  | Function func -> pp_print_string ppf func.name
-  | FuncPtr (_, e) -> pr_expr (prec_value PREC_DOT) ppf e
-  | Delegate (_, e) -> pr_expr (prec_value PREC_DOT) ppf e
-  | SysCall n -> pp_print_string ppf syscalls.(n).name
-  | HllFunc (lib, func) -> fprintf ppf "%s.%s" lib func.name
+and pr_callable oc = function
+  | Function func -> print_string oc func.name
+  | FuncPtr (_, e) -> pr_expr (prec_value PREC_DOT) oc e
+  | Delegate (_, e) -> pr_expr (prec_value PREC_DOT) oc e
+  | SysCall n -> print_string oc syscalls.(n).name
+  | HllFunc (lib, func) -> fprintf oc "%s.%s" lib func.name
   | Method (expr, func) ->
-      fprintf ppf "%a.%s"
+      fprintf oc "%a.%s"
         (pr_expr (prec_value PREC_DOT))
         expr
         (strip_class_name func.name)
   | Builtin (insn, lval) ->
-      fprintf ppf "%a.%s"
+      fprintf oc "%a.%s"
         (pr_lvalue (prec_value PREC_DOT))
         lval (builtin_method_name insn)
   | Builtin2 (insn, expr) ->
-      fprintf ppf "%a.%s"
+      fprintf oc "%a.%s"
         (pr_expr (prec_value PREC_DOT))
         expr (builtin_method_name insn)
 
-and pr_arg_list ppf args = pp_print_list ~pp_sep:comma (pr_expr 0) ppf args
+and pr_arg_list oc args = print_list ", " (pr_expr 0) oc args
 
 type debug_mapping = { addr : int; src : int; line : int }
 
@@ -398,21 +402,21 @@ let debug_info_to_json dbginfo =
       ("mappings", `List mappings);
     ]
 
-type printer = { ppf : formatter; file : string; mutable line : int }
+type printer = { oc : Stdio.Out_channel.t; file : string; mutable line : int }
 
-let create_printer ppf file = { ppf; file; line = 1 }
+let create_printer oc file = { oc; file; line = 1 }
 
 let print_newline pr =
   pr.line <- pr.line + 1;
-  pp_print_newline pr.ppf ()
+  Stdio.Out_channel.newline pr.oc
 
-let print_indent pr n = pp_print_string pr.ppf (String.make n '\t')
-let println pr fmt = kfprintf (fun _ -> print_newline pr) pr.ppf fmt
+let print_indent pr n = print_string pr.oc (String.make n '\t')
+let println pr fmt = kfprintf (fun _ -> print_newline pr) pr.oc fmt
 
 let print_function ~print_addr pr dbginfo (func : function_t) =
   let addr_and_indent addr indent =
     if addr > 0 then add_debug_info dbginfo addr pr.file pr.line;
-    if print_addr then fprintf pr.ppf "/* %08x */" addr;
+    if print_addr then fprintf pr.oc "/* %08x */" addr;
     print_indent pr indent
   in
   let pr_label = function
@@ -477,7 +481,7 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
         | Block [] -> ()
         | IfElse _ ->
             addr_and_indent stmt2.addr indent;
-            pp_print_string pr.ppf "else ";
+            print_string pr.oc "else ";
             print_stmt indent true stmt2
         | _ ->
             addr_and_indent stmt2.addr indent;
@@ -517,12 +521,12 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
         println pr "} while (%a);" (pr_expr 0) cond.txt
     | For (init, cond, inc, body) ->
         addr_and_indent stmt.addr indent;
-        pp_print_string pr.ppf "for (";
-        (match init with None -> () | Some e -> pr_expr 0 pr.ppf e);
-        pp_print_string pr.ppf "; ";
-        (match cond with None -> () | Some e -> pr_expr 0 pr.ppf e);
-        pp_print_string pr.ppf "; ";
-        (match inc with None -> () | Some e -> pr_expr 0 pr.ppf e);
+        print_string pr.oc "for (";
+        (match init with None -> () | Some e -> pr_expr 0 pr.oc e);
+        print_string pr.oc "; ";
+        (match cond with None -> () | Some e -> pr_expr 0 pr.oc e);
+        print_string pr.oc "; ";
+        (match inc with None -> () | Some e -> pr_expr 0 pr.oc e);
         println pr ")";
         addr_and_indent body.addr indent;
         println pr "{";
@@ -556,13 +560,13 @@ let print_function ~print_addr pr dbginfo (func : function_t) =
     (match func.struc with
     | Some (struc : Ain.Struct.t) ->
         if String.equal func.name "0" then
-          fprintf pr.ppf "%s::%s" struc.name struc.name
+          fprintf pr.oc "%s::%s" struc.name struc.name
         else if String.equal func.name "1" then
-          fprintf pr.ppf "%s::~%s" struc.name struc.name
-        else fprintf pr.ppf "%a %s::%s" pr_type return_type struc.name func.name
+          fprintf pr.oc "%s::~%s" struc.name struc.name
+        else fprintf pr.oc "%a %s::%s" pr_type return_type struc.name func.name
     | None ->
-        if func.func.is_label then fprintf pr.ppf "#%s" func.name
-        else fprintf pr.ppf "%a %s" pr_type return_type func.name);
+        if func.func.is_label then fprintf pr.oc "#%s" func.name
+        else fprintf pr.oc "%a %s" pr_type return_type func.name);
     println pr "(%a)" (pr_param_list pr_vardecl) (Ain.Function.args func.func)
   in
   print_func_signature func;
@@ -582,8 +586,8 @@ let print_struct_decl pr (struc : struct_t) =
       | Void -> ()
       | _ ->
           print_indent pr 1;
-          pr_vardecl pr.ppf v.v;
-          pr_array_dims pr.ppf v.dims;
+          pr_vardecl pr.oc v.v;
+          pr_array_dims pr.oc v.dims;
           println pr ";");
   if
     (not (Array.is_empty struc.struc.members))
@@ -591,16 +595,16 @@ let print_struct_decl pr (struc : struct_t) =
   then print_newline pr;
   List.iter struc.methods ~f:(fun func ->
       print_indent pr 1;
-      if String.equal func.name "0" then fprintf pr.ppf "%s" struc.struc.name
+      if String.equal func.name "0" then fprintf pr.oc "%s" struc.struc.name
       else if String.equal func.name "1" then
-        fprintf pr.ppf "~%s" struc.struc.name
-      else fprintf pr.ppf "%a %s" pr_type func.func.return_type func.name;
+        fprintf pr.oc "~%s" struc.struc.name
+      else fprintf pr.oc "%a %s" pr_type func.func.return_type func.name;
       println pr "(%a);" (pr_param_list pr_vardecl)
         (Ain.Function.args func.func));
   println pr "};"
 
 let print_functype_decl pr keyword (ft : Ain.FuncType.t) =
-  fprintf pr.ppf "%s %a %s " keyword pr_type ft.return_type ft.name;
+  fprintf pr.oc "%s %a %s " keyword pr_type ft.return_type ft.name;
   match Ain.FuncType.args ft with
   | [] -> println pr "(void);"
   | args -> println pr "(%a);" (pr_param_list pr_vartype) args
@@ -612,9 +616,9 @@ let print_globals pr (globals : variable list) =
   let print_group indent =
     List.iter ~f:(fun (v : variable) ->
         print_indent pr indent;
-        pr_vardecl pr.ppf v.v;
-        pr_array_dims pr.ppf v.dims;
-        pr_initval pr.ppf v.v;
+        pr_vardecl pr.oc v.v;
+        pr_array_dims pr.oc v.dims;
+        pr_initval pr.oc v.v;
         println pr ";")
   in
   List.iter groups ~f:(fun group ->
@@ -632,7 +636,7 @@ let print_constants pr =
   print_newline pr
 
 let print_hll_function pr (func : Ain.HLL.function_t) =
-  fprintf pr.ppf "%a %s" pr_type func.return_type func.name;
+  fprintf pr.oc "%a %s" pr_type func.return_type func.name;
   match Ain.HLL.args func with
   | [] -> println pr "(void);"
   | args -> println pr "(%a);" (pr_param_list pr_vardecl) args
@@ -676,4 +680,4 @@ let print_pje pr proj =
   println pr "}"
 
 let print_debug_info pr dbginfo =
-  debug_info_to_json dbginfo |> Yojson.Basic.to_string |> pp_print_string pr.ppf
+  debug_info_to_json dbginfo |> Yojson.Basic.to_string |> print_string pr.oc
