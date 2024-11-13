@@ -102,7 +102,7 @@ let remove_redundant_return stmt =
       | stmt -> stmt);
   }
 
-let remove_implicit_array_free stmt =
+let remove_implicit_array_free funcname stmt =
   let process_block stmts =
     let vars =
       List.rev_filter_map stmts ~f:(function
@@ -125,8 +125,9 @@ let remove_implicit_array_free stmt =
       | _, ({ txt = Break; _ } as stmt) :: stmts ->
           stmt :: remove_free vars stmts
       | _ ->
-          Stdio.eprintf "remove_implicit_array_free: no Array.free for %s\n"
-            ([%show: Ain.Variable.t list] vars);
+          List.iter vars ~f:(fun var ->
+              Stdio.eprintf "Warning: %s has no Array.free for %s\n" funcname
+                var.name);
           stmts
     in
     remove_free vars stmts

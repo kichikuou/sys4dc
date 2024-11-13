@@ -183,7 +183,8 @@ let assert_stack_empty ctx =
   match take_stack ctx with
   | [] -> ()
   | stack ->
-      Stdio.eprintf "Non-empty stack at statement end: %s\n"
+      Stdio.eprintf "0x%08x: Warning: Non-empty stack at statement end: %s\n"
+        (current_address ctx)
         ([%show: expr list] stack)
 
 let emit_statement ctx stmt =

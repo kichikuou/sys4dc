@@ -93,7 +93,7 @@ let decompile_function (f : function_bytecode) =
       |> TypeAnalysis.analyze_function f.func struc
       |> Transform.rename_labels |> Transform.recover_loop_initializer
       |> Transform.remove_array_initializer_call
-      |> Transform.remove_implicit_array_free
+      |> Transform.remove_implicit_array_free f.func.name
       |> Transform.remove_generated_lockpeek
       |> Transform.remove_redundant_return
       |> Transform.remove_dummy_variable_assignment
@@ -123,8 +123,8 @@ let inspect_function (f : function_bytecode) ~print_addr =
   |> TypeAnalysis.analyze_function f.func struc
   |> Transform.rename_labels |> Transform.recover_loop_initializer
   |> Transform.remove_array_initializer_call
-  |> Transform.remove_implicit_array_free |> Transform.remove_generated_lockpeek
-  |> Transform.remove_redundant_return
+  |> Transform.remove_implicit_array_free f.func.name
+  |> Transform.remove_generated_lockpeek |> Transform.remove_redundant_return
   |> Transform.remove_dummy_variable_assignment
   |> Transform.remove_vardecl_default_rhs |> Transform.fold_newline_func_to_msg
   |> Transform.remove_optional_arguments
