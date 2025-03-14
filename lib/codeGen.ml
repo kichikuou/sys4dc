@@ -665,6 +665,7 @@ type project_t = { name : string }
 
 let print_pje pr proj =
   println pr "// Project Environment File";
+  println pr "Encoding = \"UTF-8\"";
   println pr "ProjectName = \"%s\"" proj.name;
   print_newline pr;
   println pr "CodeName = \"%s.ain\"" proj.name;
