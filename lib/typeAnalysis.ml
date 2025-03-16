@@ -313,7 +313,7 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         Type.TypeVar.set_id ftv ft_id
           (Ain.FuncType.to_type Ain.ain.fnct.(ft_id));
         (AssignOp (insn, lval', rhs'), String)
-    | Delegate dtl, Delegate dtr, _ ->
+    | (Delegate dtl | Ref (Delegate dtl)), Delegate dtr, _ ->
         Type.TypeVar.unify dtl dtr;
         (AssignOp (insn, lval', rhs'), lt)
     | (Int | Bool | LongInt | Char), (Int | Bool | LongInt | Char), _

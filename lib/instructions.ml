@@ -263,8 +263,8 @@ type instruction =
   | SH_LOC_LT_IMM_OR_LOC_GE_IMM of int * int32 * int32
   (* instruction names are known, exact order of them are guesses after this point *)
   | A_SORT_MEM
-  | DG_ADD
   | DG_SET
+  | DG_ADD
   | DG_CALL of int * int (* dg_type, addr *)
   | DG_NUMOF
   | DG_EXIST
@@ -711,8 +711,8 @@ let decode code_bytes =
           let imm2 = BR.i32 br in
           SH_LOC_LT_IMM_OR_LOC_GE_IMM (local, imm1, imm2)
       | 0xf1 -> A_SORT_MEM
-      | 0xf2 -> DG_ADD
-      | 0xf3 -> DG_SET
+      | 0xf2 -> DG_SET
+      | 0xf3 -> DG_ADD
       | 0xf4 ->
           let dg_type = BR.int br in
           let addr = BR.int br in
