@@ -1220,13 +1220,14 @@ let rec replace_delegate_calls acc = function
   | insn :: rest -> replace_delegate_calls (insn :: acc) rest
   | [] -> List.rev acc
 
-let create code end_addr func struc parent =
-  code |> replace_delegate_calls [] |> make_basic_blocks end_addr
+let create (f : CodeSection.function_t) =
+  f.code |> replace_delegate_calls []
+  |> make_basic_blocks f.end_addr
   |> analyze_basic_blocks
        {
-         func;
-         struc;
-         parent;
+         func = f.func;
+         struc = f.struc;
+         parent = f.parent;
          instructions = [];
          address = -1;
          end_address = -1;

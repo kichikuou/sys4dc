@@ -42,13 +42,7 @@ type 'a basic_block = {
 
 type t = fragment basic_block [@@deriving show { with_path = false }]
 
-val create :
-  Instructions.instruction loc list ->
-  int ->
-  Ain.Function.t ->
-  Ain.Struct.t option ->
-  Ain.Function.t option (* parent *) ->
-  t list
+val create : CodeSection.function_t -> t list
 
 (* Replace the first occurence of each local variable with the variable declaration. *)
 val generate_var_decls : Ain.Function.t -> t list -> t list
