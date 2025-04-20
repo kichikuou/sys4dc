@@ -180,7 +180,11 @@ let remove_generated_lockpeek stmt =
 
 let remove_vardecl_default_rhs stmt =
   map_stmt stmt ~f:(function
-    | VarDecl (v, Some (_, (Null | DerefRef NullRef))) -> VarDecl (v, None)
+    | VarDecl
+        ( v,
+          Some (_, (Null | DerefRef NullRef | Number 0l | Float 0.0 | String ""))
+        ) ->
+        VarDecl (v, None)
     | s -> s)
 
 let fold_newline_func_to_msg stmt =
