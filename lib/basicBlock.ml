@@ -321,7 +321,7 @@ let builtin2 ctx insn nr_args =
 
 let s_erase2 ctx =
   match take_stack ctx with
-  | [ _; index; str ] ->
+  | [ Number 1l; index; str ] ->
       emit_expression ctx (Call (Builtin2 (S_ERASE2, str), [ index ]))
   | stack -> unexpected_stack "S_ERASE2" stack
 
