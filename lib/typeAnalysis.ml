@@ -78,6 +78,19 @@ let remove_cast (t : ain_type) e =
   | LongInt, UnaryOp (ITOLI, e) -> e
   | _, _ -> e
 
+let remove_binop_cast (insn : Instructions.instruction) lhs rhs =
+  match insn with
+  | F_ADD | F_SUB | F_MUL | F_DIV | F_EQUALE | F_NOTE | F_LT | F_LTE | F_GT
+  | F_GTE -> (
+      match (lhs, rhs) with
+      | UnaryOp (ITOF, _), UnaryOp (ITOF, _) -> (lhs, rhs)
+      | _, _ -> (remove_cast Float lhs, remove_cast Float rhs))
+  | LI_ADD | LI_SUB | LI_MUL | LI_DIV | LI_MOD -> (
+      match (lhs, rhs) with
+      | UnaryOp (ITOLI, _), UnaryOp (ITOLI, _) -> (lhs, rhs)
+      | _, _ -> (remove_cast LongInt lhs, remove_cast LongInt rhs))
+  | _ -> (lhs, rhs)
+
 let unify_if_functype t t' =
   match (t, t') with
   | FuncType ftv, FuncType ftv' -> Type.TypeVar.unify ftv ftv'
@@ -278,14 +291,6 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
     let expected_arg_type =
       match insn with PSEUDO_LOGAND | PSEUDO_LOGOR -> Bool | _ -> Any
     in
-    let decast =
-      match insn with
-      | F_ADD | F_SUB | F_MUL | F_DIV | F_EQUALE | F_NOTE | F_LT | F_LTE | F_GT
-      | F_GTE ->
-          remove_cast Float
-      | LI_ADD | LI_SUB | LI_MUL | LI_DIV | LI_MOD -> remove_cast LongInt
-      | _ -> Fn.id
-    in
     (* If either side is a numeric literal, match it to the other side's type. *)
     match (lhs, rhs) with
     | _, Number _ ->
@@ -297,11 +302,11 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
         let lhs', lt = analyze_expr rt lhs in
         (BinaryOp (result_insn lt rt, lhs', rhs'), result_type lt rt)
     | _, _ ->
-        let lhs', lt = analyze_expr expected_arg_type lhs
-        and rhs', rt = analyze_expr expected_arg_type rhs in
+        let lhs, lt = analyze_expr expected_arg_type lhs
+        and rhs, rt = analyze_expr expected_arg_type rhs in
         unify_if_functype lt rt;
-        ( BinaryOp (result_insn lt rt, decast lhs', decast rhs'),
-          result_type lt rt )
+        let lhs, rhs = remove_binop_cast insn lhs rhs in
+        (BinaryOp (result_insn lt rt, lhs, rhs), result_type lt rt)
   and analyze_assign_op insn lval rhs =
     let lval', lt = analyze_lvalue lval in
     let rhs', rt = analyze_expr lt rhs in
