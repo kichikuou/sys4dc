@@ -390,7 +390,7 @@ let rec pr_type pr oc = function
           print_string oc ft.name
       | Var ->
           Stdio.eprintf "%s:%d Warning: unresolved functype\n" pr.file pr.line;
-          print_string oc "functype")
+          print_string oc "unknown_functype")
   | StructMember _ -> failwith "cannot happen"
   | Delegate dtv -> (
       match Type.TypeVar.get_value dtv with
