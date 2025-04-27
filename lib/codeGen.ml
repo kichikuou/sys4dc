@@ -219,7 +219,7 @@ and pr_expr ?parent_op prec oc = function
   | BoundMethod (Number -1l, f) ->
       fprintf oc "&%s" (Ain.Function.parse_name f).name
   | BoundMethod (expr, f) ->
-      fprintf oc "&%a.%s"
+      fprintf oc "%a.%s"
         (pr_expr (prec_value PREC_DOT))
         expr (Ain.Function.parse_name f).name
   | Deref lval -> pr_lvalue prec oc lval
