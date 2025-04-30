@@ -95,6 +95,7 @@ let remove_redundant_return stmt =
     stmt with
     txt =
       (match stmt.txt with
+      | Return None -> Block []
       | Block ({ txt = Return None; _ } :: stmts) -> Block stmts
       | Block ({ txt = Return _; _ } :: ({ txt = Return _; _ } :: _ as stmts))
         ->
