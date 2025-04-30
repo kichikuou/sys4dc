@@ -74,22 +74,34 @@ let to_variable_list vars =
 
 let extract_array_dims stmt vars =
   let h = Stdlib.Hashtbl.create (Array.length vars) in
-  List.iter
-    (match stmt with { txt = Ast.Block stmts; _ } -> stmts | _ -> [ stmt ])
-    ~f:(function
-      | { txt = Ast.Return _; _ } -> ()
-      | {
-          txt =
-            Expression
-              (Call (Builtin (Instructions.A_ALLOC, PageRef (_, v)), dims));
-          _;
-        } ->
-          Stdlib.Hashtbl.add h v dims
-      | _ -> failwith "unexpected statement in array initializer");
-  List.map (Array.to_list vars) ~f:(fun v ->
-      match Stdlib.Hashtbl.find_opt h v with
-      | Some dims -> CodeGen.{ v; dims }
-      | None -> { v; dims = [] })
+  if
+    List.for_all
+      (match stmt with { txt = Ast.Block stmts; _ } -> stmts | _ -> [ stmt ])
+      ~f:(function
+        | { txt = Ast.Return _; _ } -> true
+        | {
+            txt =
+              Expression
+                (Call (Builtin (Instructions.A_ALLOC, PageRef (_, v)), dims));
+            _;
+          } ->
+            Stdlib.Hashtbl.add h v dims;
+            true
+        | _ -> false)
+  then
+    Some
+      ( List.map (Array.to_list vars) ~f:(fun v ->
+            match Stdlib.Hashtbl.find_opt h v with
+            | Some dims -> CodeGen.{ v; dims }
+            | None -> { v; dims = [] }),
+        Stdlib.Hashtbl.length h > 0 )
+  else None
+
+let extract_array_dims_exn stmt vars =
+  Option.value_exn
+    (extract_array_dims stmt vars)
+    ~message:"unexpected statement in array initializer"
+  |> fst
 
 type decompiled_ain = {
   structs : CodeGen.struct_t array;
@@ -118,12 +130,18 @@ let decompile () =
           | { struc = Some struc; _ } ->
               let s = structs.(struc.id) in
               if String.equal f.name "2" then
-                s.members <- extract_array_dims f.body struc.members
+                s.members <- extract_array_dims_exn f.body struc.members
+              else if String.equal f.name "0" then (
+                match extract_array_dims f.body struc.members with
+                | Some (vs, true) -> s.members <- vs
+                | _ ->
+                    s.methods <- f :: s.methods;
+                    decompiled_funcs := f :: !decompiled_funcs)
               else (
                 if not f.func.is_lambda then s.methods <- f :: s.methods;
                 decompiled_funcs := f :: !decompiled_funcs)
           | { struc = None; name = "0"; _ } ->
-              globals := extract_array_dims f.body Ain.ain.glob
+              globals := extract_array_dims_exn f.body Ain.ain.glob
           | { struc = None; name = "NULL"; _ } -> ()
           | _ -> decompiled_funcs := f :: !decompiled_funcs);
           List.iter func.lambdas ~f:process_func
