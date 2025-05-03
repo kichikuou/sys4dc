@@ -292,16 +292,20 @@ let analyze_function (func : Ain.Function.t) (struc : Ain.Struct.t option) stmt
       match insn with PSEUDO_LOGAND | PSEUDO_LOGOR -> Bool | _ -> Any
     in
     (* If either side is a numeric literal, match it to the other side's type. *)
-    match (lhs, rhs) with
-    | _, Number _ ->
+    match (insn, lhs, rhs) with
+    | (LSHIFT | RSHIFT), _, _ ->
+        let lhs', lt = analyze_expr expected_arg_type lhs in
+        let rhs', rt = analyze_expr Int rhs in
+        (BinaryOp (result_insn lt rt, lhs', rhs'), result_type lt rt)
+    | _, _, Number _ ->
         let lhs', lt = analyze_expr expected_arg_type lhs in
         let rhs', rt = analyze_expr lt rhs in
         (BinaryOp (result_insn lt rt, lhs', rhs'), result_type lt rt)
-    | Number _, _ ->
+    | _, Number _, _ ->
         let rhs', rt = analyze_expr expected_arg_type rhs in
         let lhs', lt = analyze_expr rt lhs in
         (BinaryOp (result_insn lt rt, lhs', rhs'), result_type lt rt)
-    | _, _ ->
+    | _, _, _ ->
         let lhs, lt = analyze_expr expected_arg_type lhs
         and rhs, rt = analyze_expr expected_arg_type rhs in
         unify_if_functype lt rt;
