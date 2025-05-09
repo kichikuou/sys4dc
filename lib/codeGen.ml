@@ -683,7 +683,7 @@ let print_pje pr proj =
   println pr "SourceDir = \".\"";
   println pr "HLLDir = \"HLL\"";
   println pr "ObjDir = \"OBJ\"";
-  println pr "OutputDir = \"Run\"";
+  println pr "OutputDir = \".\"";
   print_newline pr;
   println pr "Source = {";
   println pr "\t\"main.inc\",";
