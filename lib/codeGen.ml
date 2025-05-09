@@ -388,9 +388,7 @@ let rec pr_type pr oc = function
                 Poly.(t = Ain.FuncType.to_type ft))
           in
           print_string oc ft.name
-      | Var ->
-          Stdio.eprintf "%s:%d Warning: unresolved functype\n" pr.file pr.line;
-          print_string oc "unknown_functype")
+      | Var -> print_string oc "unknown_functype")
   | StructMember _ -> failwith "cannot happen"
   | Delegate dtv -> (
       match Type.TypeVar.get_value dtv with
@@ -402,10 +400,7 @@ let rec pr_type pr oc = function
                 Poly.(t = Ain.FuncType.to_type ft))
           in
           print_string oc dt.name
-      | Var ->
-          Stdio.eprintf "%s:%d Warning: unresolved delegate type\n" pr.file
-            pr.line;
-          print_string oc "delegate")
+      | Var -> print_string oc "unknown_delegate")
   | HllFunc2 -> print_string oc "hll_func2"
   | HllParam -> print_string oc "hll_param"
 
