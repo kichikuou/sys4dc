@@ -24,6 +24,8 @@ type function_t = {
   parent : Ain.Function.t option;
 }
 
+val is_overridden_function : function_t -> bool
+
 (* Transforms the code section of Ain v0 into a format accepted by group_by_source_file. *)
 val preprocess_ain_v0 :
   Instructions.instruction Loc.loc list -> Instructions.instruction Loc.loc list

@@ -28,6 +28,10 @@ type function_t = {
   parent : Ain.Function.t option;
 }
 
+let is_overridden_function (f : function_t) =
+  f.func.address
+  <> match List.hd f.code with Some insn -> insn.addr | None -> f.end_addr
+
 (* In Ain v0, when a Function.t is a method, its name field contains the class
    name (the method name is not recorded anywhere). To simplify the
    decompilation process, rename them to align with the Ain v1+ naming
@@ -66,8 +70,11 @@ let preprocess_ain_v0 code =
 let group_by_source_file code =
   let rec aux acc curr = function
     | [] ->
-        assert (List.is_empty curr);
-        List.rev acc
+        if List.is_empty curr then List.rev acc
+        else
+          (* ain file patched by AinDecompiler *)
+          let eof = { addr = -1; end_addr = -1; txt = EOF (-1) } in
+          aux (("remaining.jaf", List.rev (eof :: curr)) :: acc) [] []
     | ({ txt = EOF n; _ } as hd) :: tl ->
         aux ((Ain.ain.fnam.(n), List.rev (hd :: curr)) :: acc) [] tl
     | hd :: tl -> aux acc (hd :: curr) tl

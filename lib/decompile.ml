@@ -125,6 +125,10 @@ let decompile () =
   let srcs =
     List.map files ~f:(fun (fname, code_in_file) ->
         let funcs = CodeSection.parse_functions code_in_file in
+        let funcs =
+          List.filter funcs ~f:(fun f ->
+              not (CodeSection.is_overridden_function f))
+        in
         let decompiled_funcs = ref [] in
         let rec process_func func =
           let f = decompile_function func in
