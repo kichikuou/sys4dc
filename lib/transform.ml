@@ -103,35 +103,31 @@ let remove_redundant_return stmt =
       | stmt -> stmt);
   }
 
-let remove_implicit_array_free funcname stmt =
+let remove_implicit_array_free stmt =
   let process_block stmts =
     let vars =
       List.rev_filter_map stmts ~f:(function
         | { txt = VarDecl (({ type_ = Array _; _ } as var), _); _ } -> Some var
         | _ -> None)
     in
-    let rec remove_free vars stmts =
-      match (vars, stmts) with
-      | [], _ -> stmts
-      | ( var :: vars,
-          {
+    let remove_free vars stmts =
+      List.drop_while stmts ~f:(function
+        | {
             txt =
               Expression (Call (Builtin (A_FREE, PageRef (LocalPage, v)), []));
             _;
-          }
-          :: stmts )
-        when phys_equal var v ->
-          remove_free vars stmts
-      (* For switch statements, free is inserted before break *)
-      | _, ({ txt = Break; _ } as stmt) :: stmts ->
-          stmt :: remove_free vars stmts
-      | _ ->
-          List.iter vars ~f:(fun var ->
-              Stdio.eprintf "Warning: %s has no Array.free for %s\n" funcname
-                var.name);
-          stmts
+          } ->
+            List.exists vars ~f:(fun var -> phys_equal var v)
+        | _ -> false)
     in
-    remove_free vars stmts
+    let rec walk vars stmts =
+      match stmts with
+      | [] -> []
+      | ({ txt = Goto _ | Break | Continue; _ } as stmt) :: stmts ->
+          stmt :: walk vars (remove_free vars stmts)
+      | stmt :: stmts -> stmt :: walk vars stmts
+    in
+    if List.is_empty vars then stmts else walk vars (remove_free vars stmts)
   in
   match stmt with
   | { txt = Block stmts; _ } ->
