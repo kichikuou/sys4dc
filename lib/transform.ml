@@ -138,6 +138,36 @@ let remove_implicit_array_free funcname stmt =
       { stmt with txt = Block (List.map stmts ~f:(map_block ~f:process_block)) }
   | stmt -> map_block stmt ~f:process_block
 
+(* Some functions in Rance 6 and Tsuma Shibori have Array.free for out-of-scope
+   variables. This transform removes them. *)
+let remove_array_free_for_dead_arrays stmt =
+  let dead_arrays = ref [] in
+  let process_block stmts =
+    let arrays =
+      List.filter_map stmts ~f:(function
+        | { txt = VarDecl (({ type_ = Array _; _ } as var), _); _ } -> Some var
+        | _ -> None)
+    in
+    let rec remove_free = function
+      | {
+          txt = Expression (Call (Builtin (A_FREE, PageRef (LocalPage, v)), []));
+          _;
+        }
+        :: stmts
+        when List.exists !dead_arrays ~f:(fun var -> phys_equal var v) ->
+          Stdio.eprintf
+            "Warning: Removing Array.free for out-of-scope variable %s\n" v.name;
+          remove_free stmts
+      | ({ txt = Break | Goto _; _ } as stmt) :: stmts ->
+          stmt :: remove_free stmts
+      | stmts -> stmts
+    in
+    let stmts = remove_free stmts in
+    dead_arrays := List.append arrays !dead_arrays;
+    stmts
+  in
+  map_block stmt ~f:process_block
+
 let remove_array_initializer_call = function
   | { txt = Block stmts; _ } as stmt -> (
       match List.rev stmts with

@@ -184,7 +184,7 @@ let rec map_block stmt ~f =
     | ScenarioJump _ -> stmt.txt
     | Msg _ -> stmt.txt
     | Assert _ -> stmt.txt
-    | Block stmts -> Block (f (List.map stmts ~f:(map_block ~f)))
+    | Block stmts -> Block (f (List.rev_map (List.rev stmts) ~f:(map_block ~f)))
     | Switch (id, e, stmt) -> Switch (id, e, map_block stmt ~f)
   in
   { stmt with txt }
