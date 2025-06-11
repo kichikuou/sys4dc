@@ -25,7 +25,6 @@ let decompile_function (f : CodeSection.function_t) =
       |> ControlFlow.analyze
       |> TypeAnalysis.analyze_function f.func f.struc
       |> Transform.rename_labels |> Transform.recover_loop_initializer
-      |> Transform.remove_array_initializer_call
       |> Transform.remove_implicit_array_free
       |> Transform.remove_array_free_for_dead_arrays
       |> Transform.remove_generated_lockpeek
@@ -55,7 +54,6 @@ let inspect_function (f : CodeSection.function_t) ~print_addr =
        stmt)
   |> TypeAnalysis.analyze_function f.func f.struc
   |> Transform.rename_labels |> Transform.recover_loop_initializer
-  |> Transform.remove_array_initializer_call
   |> Transform.remove_implicit_array_free
   |> Transform.remove_array_free_for_dead_arrays
   |> Transform.remove_generated_lockpeek |> Transform.remove_redundant_return
@@ -142,7 +140,8 @@ let decompile () =
                 | Some (vs, true) -> s.members <- vs
                 | _ ->
                     s.methods <- f :: s.methods;
-                    decompiled_funcs := f :: !decompiled_funcs)
+                    let body = Transform.remove_array_initializer_call f.body in
+                    decompiled_funcs := { f with body } :: !decompiled_funcs)
               else (
                 if not f.func.is_lambda then s.methods <- f :: s.methods;
                 decompiled_funcs := f :: !decompiled_funcs)
