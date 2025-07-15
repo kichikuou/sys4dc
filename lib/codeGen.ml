@@ -368,7 +368,7 @@ let rec pr_type pr oc = function
   | LongInt -> print_string oc "lint"
   | Void -> print_string oc "void"
   | Struct n ->
-      print_string oc (if n < 0 then "any_struct" else Ain.ain.strt.(n).name)
+      print_string oc (if n < 0 then "struct" else Ain.ain.strt.(n).name)
   | Array _ as t ->
       print_string oc "array@";
       let base, rank = Type.array_base_and_rank t in
