@@ -750,7 +750,8 @@ let analyze ctx =
         binary_op ctx op
     | ( ASSIGN | F_ASSIGN | LI_ASSIGN | PLUSA | MINUSA | MULA | DIVA | MODA
       | ANDA | ORA | XORA | LSHIFTA | RSHIFTA | F_PLUSA | F_MINUSA | F_MULA
-      | F_DIVA | LI_PLUSA | LI_MINUSA ) as op ->
+      | F_DIVA | LI_PLUSA | LI_MINUSA | LI_MULA | LI_DIVA | LI_MODA | LI_ANDA
+      | LI_ORA | LI_XORA | LI_LSHIFTA | LI_RSHIFTA ) as op ->
         assign_op ctx op
     | INC | LI_INC -> incdec ctx Increment
     | DEC | LI_DEC -> incdec ctx Decrement
