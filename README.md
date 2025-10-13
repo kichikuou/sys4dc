@@ -1,5 +1,8 @@
 # sys4dc
 
+**This repository is obsolete. Development has moved to
+[sys4lang](https://github.com/kichikuou/sys4lang).**
+
 This is an experimental decompiler for AliceSoft's System4 game engine.
 Currently it supports games released between 2003 (Daibanchou) and 2015
 (Rance 03).
